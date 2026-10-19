@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import fs from "node:fs";
 import { blankEntry } from "../src/domain.ts";
+import { newBoardItem } from '../src/board-model.ts';
 const source = fs.readFileSync(
   new URL("../apps-script/Code.gs", import.meta.url),
   "utf8",
@@ -17,9 +18,12 @@ function backend() {
     ["ALLOWED_EMAILS", "one@gmail.com, TWO@gmail.com"],
   ]);
   const cells = [];
-  let sheet = null,
-    reads = 0;
-  const instance = {
+  const sheets = new Map();
+  let reads = 0;
+  function makeSheet(cells) { return {
+    getMaxColumns: () => 26,
+    insertColumnsAfter: () => {},
+    insertRowsAfter: () => {},
     getLastRow: () => cells.findLastIndex((row) => row.some(Boolean)) + 1,
     getMaxRows: () => 1000,
     setFrozenRows: () => {},
@@ -42,7 +46,7 @@ function backend() {
         for (let y = 0; y < h; y++) cells[r + y - 1] = Array(w).fill("");
       },
     }),
-  };
+  }; }
   const context = vm.createContext({
     PropertiesService: {
       getScriptProperties: () => ({
@@ -99,8 +103,8 @@ function backend() {
       openById: () => {
         reads++;
         return {
-          getSheetByName: () => sheet,
-          insertSheet: () => (sheet = instance),
+          getSheetByName: name => sheets.get(name)?.instance || null,
+          insertSheet: name => { const rows=name==="Entries"?cells:[]; const instance=makeSheet(rows); sheets.set(name,{rows,instance}); return instance; },
         };
       },
       flush: () => {},
@@ -118,6 +122,8 @@ function backend() {
   return {
     call,
     cells,
+    sheetCells: name => sheets.get(name)?.rows,
+    clearCache: () => cache.clear(),
     reads: () => reads,
     setBusy: (busy) => {
       externalBusy = busy;
@@ -140,7 +146,7 @@ test("busy cold reads return a retryable code quickly without touching the Sheet
 });
 test("authorized readers use committed cached snapshots while a writer holds the lock", () => {
   const api = backend(),
-    e = { ...blankEntry(), note: "Shared" };
+    e = { ...blankEntry(), name: "Shared" };
   api.call({ action: "write", token: "one", revision: 0, entries: [e] });
   const reads = api.reads();
   api.setBusy(true);
@@ -164,7 +170,7 @@ test("GAS fails closed before reading the Sheet for missing, invalid, unverified
 });
 test("GAS serializes text safely and rejects stale writes from another spouse", () => {
   const api = backend(),
-    e = { ...blankEntry(), note: '=IMPORTXML("https://example.com")' };
+    e = { ...blankEntry(), name: '=IMPORTXML("https://example.com")' };
   assert.equal(api.call({ action: "read", token: "one" }).revision, 0);
   const saved = api.call({
     action: "write",
@@ -174,7 +180,7 @@ test("GAS serializes text safely and rejects stale writes from another spouse", 
   });
   assert.equal(saved.ok, true);
   assert.equal(saved.revision, 1);
-  assert.equal(api.cells[1][1].startsWith('"'), true);
+  assert.equal(api.cells[1][20].startsWith('"'), true);
   assert.deepEqual(saved.entries, [e]);
   const stale = api.call({
     action: "write",
@@ -189,7 +195,7 @@ test("GAS serializes text safely and rejects stale writes from another spouse", 
 });
 test("GAS validates dependencies and can clear the final entry", () => {
   const api = backend(),
-    e = { ...blankEntry(), note: "A task", requires: ["missing"] };
+    e = { ...blankEntry(), name: "A task", requires: ["missing"] };
   assert.equal(
     api.call({ action: "write", token: "one", revision: 0, entries: [e] }).ok,
     false,
@@ -204,4 +210,112 @@ test("GAS validates dependencies and can clear the final entry", () => {
       .entries,
     [],
   );
+});
+
+test("legacy Entries headers and rows migrate without losing entry data", () => {
+  const api=backend(), entry={...blankEntry(),name:'Existing data'};
+  assert.equal(api.call({action:'write',token:'one',revision:0,entries:[entry]}).ok,true);
+  api.cells[0]=api.cells[0].slice(0,18);
+  api.cells[1][1]=JSON.stringify(entry.name);
+  api.cells[1]=api.cells[1].slice(0,18);
+  api.clearCache();
+  const result=api.call({action:'read',token:'two'});
+  assert.equal(result.ok,true);
+  assert.equal(result.apiVersion,4);
+  assert.deepEqual(result.entries,[entry]);
+  assert.deepEqual(Array.from(api.cells[0].slice(-3)),['boardItems','attachments','name']);
+});
+
+test("attachments round-trip in chunks and ordinary sync returns metadata only", () => {
+  const api=backend(), entry={...blankEntry(),name:'Photo'};
+  const bytes=Buffer.alloc(2097152,123), dataUrl='data:image/png;base64,'+bytes.toString('base64');
+  const metadata={id:'file-one',name:'=photo.png',type:'image/png',size:bytes.length,createdAt:new Date().toISOString()};
+  const put={action:'file.put',token:'one',entryId:entry.id,metadata,dataUrl};
+  assert.equal(api.call(put).ok,true);
+  const rows=api.sheetCells('AttachmentData').length;
+  assert.ok(rows>2);
+  assert.ok(api.sheetCells('AttachmentData').slice(1).every(row=>row[2].length<50000));
+  assert.equal(api.call(put).ok,true);
+  assert.equal(api.sheetCells('AttachmentData').length,rows);
+  entry.attachments=[metadata];
+  assert.equal(api.call({action:'write',token:'one',revision:0,entries:[entry]}).ok,true);
+  const ordinary=api.call({action:'read',token:'two'});
+  assert.deepEqual(ordinary.entries,[entry]);
+  assert.ok(!JSON.stringify(ordinary).includes(';base64,'));
+  const fetched=api.call({action:'file.get',token:'two',entryId:entry.id,id:metadata.id});
+  assert.equal(fetched.dataUrl,dataUrl);
+  // Preserved concurrent versions can share immutable file IDs.
+  assert.equal(api.call({action:'file.get',token:'two',entryId:'copy',id:metadata.id}).dataUrl,dataUrl);
+  assert.equal(api.call({...put,entryId:'different-owner'}).ok,false);
+});
+
+test("file requests enforce whitelist, size, encoding, and lock retry protocol", () => {
+  const api=backend(), metadata={id:'file',name:'a.txt',type:'text/plain',size:1,createdAt:new Date().toISOString()};
+  const put={action:'file.put',token:'one',entryId:'entry',metadata,dataUrl:'data:text/plain;base64,YQ=='};
+  assert.equal(api.call({...put,token:'outsider'}).ok,false);
+  assert.equal(api.reads(),0);
+  assert.equal(api.call({...put,metadata:{...metadata,size:2097153}}).ok,false);
+  assert.equal(api.call({...put,dataUrl:'data:text/plain;base64,!!!!'}).ok,false);
+  assert.equal(api.call({...put,metadata:{...metadata,size:2}}).ok,false);
+  assert.equal(api.reads(),0);
+  api.setBusy(true);
+  assert.equal(api.call(put).code,'BUSY');
+  api.setBusy(false);
+  assert.equal(api.call(put).ok,true);
+  assert.equal(api.call({action:'file.get',token:'one',entryId:'entry',id:'missing'}).ok,false);
+});
+
+test('standalone calendar views share revision checks and cached reads without creating entries',()=>{
+  const api=backend(),calendar=newBoardItem('calendar');
+  const saved=api.call({action:'write',token:'one',revision:0,entries:[],boardViews:[calendar]});
+  assert.equal(saved.ok,true);
+  assert.deepEqual(saved.entries,[]);
+  assert.deepEqual(saved.boardViews,[calendar]);
+  assert.equal(saved.revision,1);
+  assert.equal(api.sheetCells('BoardViews').length,2);
+  api.setBusy(true);
+  assert.deepEqual(api.call({action:'read',token:'two'}).boardViews,[calendar]);
+  api.setBusy(false);
+  assert.equal(api.call({action:'write',token:'two',revision:0,entries:[],boardViews:[]}).code,'CONFLICT');
+  // An older client omitting boardViews cannot erase independently stored views.
+  assert.deepEqual(api.call({action:'write',token:'one',revision:1,entries:[]}).boardViews,[calendar]);
+  api.clearCache();
+  assert.deepEqual(api.call({action:'read',token:'two'}).boardViews,[calendar]);
+  assert.equal(api.call({action:'write',token:'one',revision:2,entries:[],boardViews:[]}).ok,true);
+  api.clearCache();
+  assert.deepEqual(api.call({action:'read',token:'two'}).boardViews,[]);
+});
+
+test('backend persists palette, pins, and archives, and rejects invalid board settings',()=>{
+  const api=backend(),entry={...blankEntry(),name:'Card',boardItems:[{...newBoardItem('sticky'),color:'orange',pinned:true,archived:true}]};
+  assert.equal(api.call({action:'write',token:'one',revision:0,entries:[entry]}).ok,true);
+  api.clearCache();
+  assert.deepEqual(api.call({action:'read',token:'two'}).entries,[entry]);
+  for(const patch of [{pinned:'yes'},{calendarPeriod:'year'},{calendarDate:'2026-02-30'},{archived:1}]) {
+    assert.equal(api.call({action:'write',token:'one',revision:1,entries:[],boardViews:[{...newBoardItem('calendar'),...patch}]}).ok,false);
+  }
+});
+
+test('backend permits identical names with separate IDs and an empty note',()=>{
+  const api=backend(),first={...blankEntry(),name:'Same name'},second={...blankEntry(),name:'Same name',note:'Optional body'};
+  const result=api.call({action:'write',token:'one',revision:0,entries:[first,second]});
+  assert.equal(result.ok,true);
+  assert.deepEqual(result.entries,[first,second]);
+  assert.equal(api.call({action:'write',token:'one',revision:1,entries:[{...first,name:''}]}).ok,false);
+});
+
+test('20-column Sheets migrate names without changing IDs, files, or card metadata',()=>{
+  const api=backend(),entry={...blankEntry(),name:'Legacy name',note:'Legacy body',boardItems:[newBoardItem('sticky')]};
+  api.call({action:'write',token:'one',revision:0,entries:[entry]});
+  api.cells[0]=api.cells[0].slice(0,20);
+  api.cells[1]=api.cells[1].slice(0,20);
+  api.cells[1][1]=JSON.stringify('Legacy name\nLegacy body');
+  api.clearCache();
+  const result=api.call({action:'read',token:'two'});
+  assert.equal(result.ok,true);
+  assert.deepEqual(result.entries,[entry]);
+  assert.equal(api.cells[0][20],'name');
+  assert.equal(JSON.parse(api.cells[1][20]),'Legacy name');
+  assert.equal(JSON.parse(api.cells[1][1]),'Legacy body');
+  assert.equal(result.revision,2);
 });

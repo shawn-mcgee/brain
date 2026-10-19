@@ -1,0 +1,55 @@
+export type BoardKind = 'sticky' | 'polaroid' | 'calendar';
+export type BoardItem = { id: string; kind: BoardKind; x: number; y: number; width: number; height: number; z: number; color: string; customColor?:boolean; pinned?:boolean; archived?:boolean; title?:string; calendarPeriod?:'day'|'week'|'month'; calendarDynamic?:boolean; calendarDate?:string };
+export type Attachment = { id: string; name: string; type: string; size: number; createdAt: string };
+export const MAX_FILE_SIZE = 2 * 1024 * 1024;
+export const boardColors = ['yellow','pink','blue','green','white','purple','orange','gray'] as const;
+export function newBoardItem(kind: BoardKind, x=0, y=0, z=1): BoardItem {
+  return {id:crypto.randomUUID(),kind,x,y,width:kind==='calendar'?420:320,height:kind==='calendar'?490:360,z,color:kind==='calendar'?'blue':kind==='polaroid'?'white':'yellow',pinned:false,archived:false,...(kind==='calendar'?{title:'Calendar',calendarPeriod:'month' as const,calendarDynamic:true}:{})};
+}
+export function validateBoardFields(boardItems: unknown, attachments: unknown): string {
+  if (!Array.isArray(boardItems) || boardItems.length>100 || !Array.isArray(attachments) || attachments.length>20) return 'Invalid board items or attachments.';
+  const ids=new Set();
+  for (const item of boardItems) {
+    if (!item || typeof item.id!=='string' || !item.id || item.id.length>100 || ids.has(item.id) || !['sticky','polaroid','calendar'].includes(item.kind) || !boardColors.includes(item.color) || !['x','y','width','height','z'].every(k=>Number.isFinite(item[k]) && Math.abs(item[k])<=10000000) || item.width<220 || item.width>1200 || item.height<180 || item.height>1200) return 'Invalid board layout.';
+    ids.add(item.id);
+    if (['pinned','archived','calendarDynamic','customColor'].some(k=>item[k]!==undefined && typeof item[k]!=='boolean') || item.title!==undefined && (typeof item.title!=='string'||item.title.length>500) || item.calendarPeriod!==undefined && !['day','week','month'].includes(item.calendarPeriod) || item.calendarDate!==undefined && !validBoardDate(item.calendarDate)) return 'Invalid board options.';
+  }
+  ids.clear();
+  for (const file of attachments) {
+    if (!file || typeof file.id!=='string' || !/^[\w-]{1,100}$/.test(file.id) || ids.has(file.id) || typeof file.name!=='string' || !file.name || file.name.length>500 || typeof file.type!=='string' || !/^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/.test(file.type) || !Number.isInteger(file.size) || file.size<0 || file.size>MAX_FILE_SIZE || typeof file.createdAt!=='string' || !Number.isFinite(Date.parse(file.createdAt)) || 'dataUrl' in file || 'data' in file) return 'Invalid attachment metadata.';
+    ids.add(file.id);
+  }
+  if(JSON.stringify(boardItems).length>40000 || JSON.stringify(attachments).length>40000) return 'Entry metadata is too large.';
+  return '';
+}
+// Merge item IDs individually so two people can pin/move different cards or add
+// different files without treating the whole entry as a conflicting edit.
+export function mergeItems<T extends {id:string}>(base:T[],local:T[],remote:T[]):T[] {
+  const b=new Map(base.map(v=>[v.id,v])),l=new Map(local.map(v=>[v.id,v])),r=new Map(remote.map(v=>[v.id,v]));
+  const same=(x:unknown,y:unknown)=>JSON.stringify(x)===JSON.stringify(y);
+  const result:T[]=[];
+  for (const id of new Set([...b.keys(),...l.keys(),...r.keys()])) {
+    const before=b.get(id),left=l.get(id),right=r.get(id);
+    if (!left || !right) {const value=left||right;if(value&&(!before||!same(value,before)))result.push(structuredClone(value));continue;}
+    const merged={...left};
+    for (const key of new Set([...Object.keys(left),...Object.keys(right)]) as Set<keyof T>) if (before&&same(left[key],before[key])) merged[key]=right[key];
+    result.push(merged);
+  }
+  return result;
+}
+export function isPreviewImage(file: Attachment) { return ['image/png','image/jpeg','image/gif','image/webp','image/avif'].includes(file.type); }
+export function screenToBoard(point:{x:number;y:number},view:{x:number;y:number;zoom:number}) {return {x:(point.x-view.x)/view.zoom,y:(point.y-view.y)/view.zoom};}
+function validBoardDate(value:unknown):boolean { return typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && value>='1900-01-01' && value<='2200-12-31' && Number.isFinite(Date.parse(value)) && new Date(value+'T12:00:00Z').toISOString().slice(0,10)===value; }
+export function decodeBoardViews(value:unknown):BoardItem[] {
+  if(!Array.isArray(value)||value.some(item=>!item||item.kind!=='calendar'))throw new Error('Invalid calendar views.');
+  const error=validateBoardFields(value,[]);if(error)throw new Error(error);
+  return value as BoardItem[];
+}
+export function effectiveCardKind(item:BoardItem,attachments:Attachment[]):BoardKind { return item.kind==='calendar'?'calendar':attachments.some(isPreviewImage)?'polaroid':'sticky'; }
+export function effectiveCardColor(item:BoardItem,attachments:Attachment[]):string {
+  const kind=effectiveCardKind(item,attachments);
+  if(item.customColor)return item.color;
+  if(kind!=='sticky'&&item.color==='yellow')return kind==='calendar'?'blue':'white';
+  if(kind==='sticky'&&item.kind==='polaroid'&&item.color==='white')return 'yellow';
+  return item.color;
+}

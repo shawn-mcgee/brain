@@ -18,8 +18,27 @@ import {
 } from "../src/domain.ts";
 const entry = (values = {}) => ({
   ...blankEntry(),
-  note: "An entry",
+  name: "An entry",
   ...values,
+});
+
+test('entry names are required, may collide, and notes are optional',()=>{
+  const first=entry({name:'Groceries',note:''}),second=entry({name:'Groceries',note:'Milk and eggs'});
+  assert.notEqual(first.id,second.id);
+  assert.equal(decodeEntries([first,second]).length,2);
+  assert.match(validateEntry({...first,name:' '},[first]),/name/);
+  assert.equal(validateEntry(first,[first]),'');
+});
+
+test('legacy note-only entries migrate into a name and optional body',()=>{
+  const legacy=entry({note:'Holiday\r\nPacking list\r\nRemember passports'});
+  delete legacy.name;
+  const migrated=decodeEntries([legacy])[0];
+  assert.equal(migrated.id,legacy.id);
+  assert.equal(migrated.name,'Holiday');
+  assert.equal(migrated.note,'Packing list\nRemember passports');
+  assert.equal(decodeEntries([{...legacy,note:'Just a title'}])[0].note,'');
+  assert.equal(decodeEntries([entry({name:'Explicit name',note:'Full body\nSecond line'})])[0].note,'Full body\nSecond line');
 });
 test("monthly recurrence clamps without drifting from the anchor", () => {
   assert.equal(repeatDate("2024-01-31", "Monthly", 1), "2024-02-29");
@@ -332,7 +351,7 @@ test("validation rejects missing dates, bad ranges and invalid budget links", ()
   );
 });
 test("imports reject malformed data and preserve valid references", () => {
-  assert.throws(() => decodeEntries([{ note: "Bad" }]), /invalid/);
+  assert.throws(() => decodeEntries([{ name: "Bad" }]), /invalid/);
   const plan = entry({ budgetType: "expense", amount: 100 });
   const actual = entry({
     transactionType: "expense",

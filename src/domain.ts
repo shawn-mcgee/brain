@@ -1,3 +1,5 @@
+import { validateBoardFields } from './board-model.ts';
+import type { BoardItem, Attachment } from './board-model.ts';
 export const intervals = [
   "Daily",
   "Weekly",
@@ -9,6 +11,7 @@ export const intervals = [
 export type Interval = (typeof intervals)[number];
 export type Entry = {
   id: string;
+  name: string;
   note: string;
   who: string[];
   task: boolean;
@@ -26,6 +29,8 @@ export type Entry = {
   budgetId: string;
   createdAt: string;
   updatedAt: string;
+  boardItems: BoardItem[];
+  attachments: Attachment[];
 };
 export type Occurrence = {
   entry: Entry;
@@ -39,6 +44,7 @@ export function blankEntry(): Entry {
   return {
     id: crypto.randomUUID(),
     note: "",
+    name: "",
     who: [],
     task: false,
     completed: false,
@@ -55,6 +61,8 @@ export function blankEntry(): Entry {
     budgetId: "",
     createdAt: now,
     updatedAt: now,
+    boardItems: [],
+    attachments: [],
   };
 }
 export const periods = [
@@ -161,7 +169,7 @@ export function todoOccurrences(
         (a.entry.endsAt || a.entry.beginsAt).localeCompare(
           b.entry.endsAt || b.entry.beginsAt,
         ) ||
-        a.entry.note.localeCompare(b.entry.note),
+        a.entry.name.localeCompare(b.entry.name),
     );
   const ordered: Occurrence[] = [],
     seen = new Set<string>();
@@ -311,7 +319,10 @@ export function sortTasks(entries: Entry[], today: string): Entry[] {
   return result;
 }
 export function validateEntry(e: Entry, entries: Entry[]): string {
-  if (!e.note.trim()) return "Give this entry a note or title.";
+  const boardError = validateBoardFields(e.boardItems || [], e.attachments || []);
+  if (boardError) return boardError;
+  if (!e.name.trim()) return "Give this entry a name.";
+  if (e.name.length > 10000) return "Keep names under 10,000 characters.";
   if (e.note.length > 10000) return "Keep notes under 10,000 characters.";
   if ((e.beginsAt && !e.beginsOn) || (e.endsAt && !e.endsOn))
     return "Add a date before adding a time.";
@@ -368,7 +379,14 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
 export function decodeEntries(value: unknown): Entry[] {
   if (!Array.isArray(value) || value.length > 10000)
     throw new Error("Expected an array of up to 10,000 entries.");
+  const normalized = value.map(raw => {
+    if(!raw || typeof raw!=='object')return raw;
+    const legacy=raw.name===undefined && typeof raw.note==='string';
+    const lines=legacy?raw.note.trim().split(/\r?\n/):[];
+    return {...raw,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
+  });
   const strings = [
+    "name",
     "id",
     "note",
     "beginsOn",
@@ -383,7 +401,7 @@ export function decodeEntries(value: unknown): Entry[] {
     "updatedAt",
   ];
   const ids = new Set<string>();
-  for (const raw of value) {
+  for (const raw of normalized) {
     if (
       !raw ||
       typeof raw !== "object" ||
@@ -413,9 +431,9 @@ export function decodeEntries(value: unknown): Entry[] {
       throw new Error("Invalid time.");
     ids.add(raw.id);
   }
-  for (const e of value as Entry[]) {
-    const error = validateEntry(e, value);
+  for (const e of normalized as Entry[]) {
+    const error = validateEntry(e, normalized);
     if (error) throw new Error(error);
   }
-  return value as Entry[];
+  return normalized as Entry[];
 }

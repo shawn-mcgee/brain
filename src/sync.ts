@@ -1,5 +1,7 @@
 import { decodeEntries } from "./domain.ts";
 import type { Entry } from "./domain.ts";
+import { mergeItems } from './board-model.ts';
+import type { BoardItem } from './board-model.ts';
 export class SyncConflict extends Error {}
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
@@ -37,6 +39,8 @@ export function mergeEntries(
     let clash = false;
     for (const key of Object.keys(l) as (keyof Entry)[]) {
       if (["id", "createdAt", "updatedAt"].includes(key)) continue;
+      if (key === 'boardItems') { merged.boardItems=mergeItems(b?.boardItems||[],l.boardItems||[],r.boardItems||[]); continue; }
+      if (key === 'attachments') { merged.attachments=mergeItems(b?.attachments||[],l.attachments||[],r.attachments||[]); continue; }
       if (["who", "requires", "completedDates"].includes(key)) {
         const original = (b?.[key] || []) as string[],
           left = l[key] as string[],
@@ -69,10 +73,11 @@ export function mergeEntries(
       entries.push({
         ...structuredClone(r),
         id: crypto.randomUUID(),
-        note:
-          r.note.length < 9940
-            ? `${r.note}\n[Version preserved during automatic merge]`
-            : r.note,
+        boardItems: r.boardItems.map(item => ({...item,id:crypto.randomUUID()})),
+        name:
+          r.name.length < 9940
+            ? `${r.name} [Version preserved during automatic merge]`
+            : r.name,
       });
     }
   }
@@ -107,36 +112,43 @@ export function mergeEntries(
   }
   return { entries: decodeEntries(entries), conflicts };
 }
-export type Snapshot = { entries: Entry[]; revision: number };
+export type Snapshot = { entries: Entry[]; revision: number; boardViews?:BoardItem[] };
 export type SyncState = {
   entries: Entry[];
   baseEntries: Entry[] | null;
   revision: number | null;
   dirty: boolean;
+  boardViews?:BoardItem[];
+  baseBoardViews?:BoardItem[]|null;
 };
 export async function synchronize(
   initial: SyncState,
   read: () => Promise<Snapshot>,
-  write: (revision: number, entries: Entry[]) => Promise<Snapshot>,
+  write: (revision: number, entries: Entry[], boardViews:BoardItem[]) => Promise<Snapshot>,
 ): Promise<Snapshot & { conflicts: number }> {
   let { entries, baseEntries, revision } = initial;
+  let boardViews=initial.boardViews||[],baseBoardViews=initial.baseBoardViews||[];
   let conflicts = 0;
   if (!initial.dirty) return { ...(await read()), conflicts };
   for (let attempt = 0; attempt < 5; attempt++) {
     if (revision === null) {
       const remote = await read();
       const merged = mergeEntries(baseEntries, entries, remote.entries);
+      boardViews=mergeItems(baseBoardViews,boardViews,remote.boardViews||[]);
+      baseBoardViews=remote.boardViews||[];
       entries = merged.entries;
       conflicts += merged.conflicts;
       baseEntries = remote.entries;
       revision = remote.revision;
     }
     try {
-      return { ...(await write(revision, entries)), conflicts };
+      return { ...(await write(revision, entries,boardViews)), conflicts };
     } catch (error) {
       if (!(error instanceof SyncConflict)) throw error;
       const remote = await read();
       const merged = mergeEntries(baseEntries, entries, remote.entries);
+      boardViews=mergeItems(baseBoardViews,boardViews,remote.boardViews||[]);
+      baseBoardViews=remote.boardViews||[];
       entries = merged.entries;
       conflicts += merged.conflicts;
       baseEntries = remote.entries;

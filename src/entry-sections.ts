@@ -1,5 +1,6 @@
 import type { Entry } from "./domain.ts";
 export const sectionNames = {
+  note: 'Note',
   task: "Task",
   who: "Who",
   begins: "Begins",
@@ -7,9 +8,11 @@ export const sectionNames = {
   repeat: "Repeats",
   requires: "Requires",
   money: "Money",
+  attachments: 'Files',
 } as const;
 export type EntrySection = keyof typeof sectionNames;
 export const sectionEmoji: Record<EntrySection, string> = {
+  note: '📝',
   task: "✅",
   who: "👥",
   begins: "🌅",
@@ -17,9 +20,11 @@ export const sectionEmoji: Record<EntrySection, string> = {
   repeat: "🔁",
   requires: "🔗",
   money: "💰",
+  attachments: '📎',
 };
 export function initialEntrySections(entry: Entry): EntrySection[] {
   const sections: EntrySection[] = [];
+  if(entry.note)sections.push('note');
   if (entry.task) sections.push("task");
   if (entry.who.length) sections.push("who");
   if (entry.beginsOn || entry.beginsAt) sections.push("begins");
@@ -27,6 +32,7 @@ export function initialEntrySections(entry: Entry): EntrySection[] {
   if (entry.repeat) sections.push("repeat");
   if (entry.requires.length) sections.push("requires");
   if (entry.budgetType || entry.transactionType) sections.push("money");
+  if (entry.attachments?.length || entry.boardItems?.some(item=>item.kind==='polaroid')) sections.push('attachments');
   return sections;
 }
 export function availableEntrySections(
@@ -46,6 +52,7 @@ export function removeEntrySection(
   section: EntrySection,
 ): { entry: Entry; sections: EntrySection[] } {
   const cleared: Record<EntrySection, Partial<Entry>> = {
+    note: {note:''},
     task: { task: false, completed: false, completedDates: [] },
     who: { who: [] },
     begins: { beginsOn: "", beginsAt: "" },
@@ -53,6 +60,7 @@ export function removeEntrySection(
     repeat: { repeat: "", completedDates: [] },
     requires: { requires: [] },
     money: { budgetType: "", transactionType: "", amount: 0, budgetId: "" },
+    attachments: {attachments:[]},
   };
   let remaining = sections.filter((value) => value !== section);
   const updated = { ...entry, ...cleared[section] };

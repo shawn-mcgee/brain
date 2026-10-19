@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   blankEntry,
@@ -30,6 +30,12 @@ import {
   validEndpoint,
 } from "./storage";
 import type { Store } from "./storage";
+import type { Connection } from './storage';
+import Attachments from './Attachments';
+import Board from './Board';
+import type { BoardItem } from './board-model';
+import { mergeItems, decodeBoardViews } from './board-model';
+import { uploadPendingFiles } from './files';
 import { login, logout } from "./auth";
 import type { Session } from "./auth";
 import { mergeEntries, synchronize } from "./sync";
@@ -49,8 +55,9 @@ import {
 import type { EntrySection as Section } from "./entry-sections";
 import "./App.css";
 
-type View = "Inbox" | "Todo" | "Calendar" | "Budget";
+type View = "Inbox" | "Todo" | "Calendar" | "Budget" | "Board";
 const icons: Record<string, string> = {
+  Board: "📌",
   Inbox: "📥",
   Todo: "✅",
   Calendar: "📅",
@@ -76,10 +83,12 @@ function Modal({
   title,
   children,
   close,
+  actions,
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
+  actions?: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -97,13 +106,17 @@ function Modal({
     >
       <div className="modal-head">
         <h2>{title}</h2>
+        <div className="modal-head-actions">
+        {actions}
         <button
+          type="button"
           className="icon-button"
           aria-label="Close dialog"
           onClick={close}
         >
           Close
         </button>
+        </div>
       </div>
       {children}
     </dialog>
@@ -116,16 +129,21 @@ function Editor({
   save,
   close,
   embedded = false,
+  connection,
+  token,
 }: {
   entry: Entry;
   entries: Entry[];
   save: (e: Entry) => void;
   close: () => void;
   embedded?: boolean;
+  connection: Connection;
+  token?: string;
 }) {
+  const formId=useId();
   const [draft, setDraft] = useState(entry),
     [error, setError] = useState("");
-  const noteSectionRef = useRef<HTMLDetailsElement>(null);
+  const [filesBusy,setFilesBusy]=useState(false);
   const [sections, setSections] = useState<Section[]>(() =>
     initialEntrySections(entry),
   );
@@ -138,6 +156,7 @@ function Editor({
   >({});
   const [sectionStatus, setSectionStatus] = useState("");
   function removeSection(section: Section) {
+    if (section === "attachments" && filesBusy) return;
     const removed = removeEntrySection(draft, sections, section);
     const removedRepeat =
       sections.includes("repeat") &&
@@ -169,8 +188,10 @@ function Editor({
     setDraft((d) => ({ ...d, ...values }));
   function submit(e: FormEvent) {
     e.preventDefault();
+    if(filesBusy){setError('Wait for the files to finish saving.');return;}
     const cleaned = {
       ...draft,
+      name: draft.name.trim(),
       note: draft.note.trim(),
       updatedAt: new Date().toISOString(),
     };
@@ -188,18 +209,14 @@ function Editor({
     } else save(cleaned);
   }
   const fields = {
+    attachments: <Attachments value={draft.attachments} entryId={draft.id} connection={connection} token={token} onChange={attachments=>update({attachments})} onBusyChange={setFilesBusy}/>,
     note: (
       <>
         <label>
           <span className="screen-reader-only">Note</span>
           <textarea
-            autoFocus
-            required
-            onInvalid={() => {
-              if (noteSectionRef.current) noteSectionRef.current.open = true;
-            }}
             rows={3}
-            placeholder="Note or title"
+            placeholder="Add a note"
             value={draft.note}
             onChange={(e) => update({ note: e.target.value })}
           />
@@ -331,7 +348,7 @@ function Editor({
                       })
                     }
                   />
-                  {e.note}
+                  {e.name}
                 </label>
               ))}
           </div>
@@ -400,7 +417,7 @@ function Editor({
                 )
                 .map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.note}
+                    {e.name}
                   </option>
                 ))}
             </select>
@@ -410,22 +427,8 @@ function Editor({
     ),
   };
   const form = (
-    <form onSubmit={submit} className="editor">
-      <div className="entry-section note-section">
-        <details className="entry-field-section" open ref={noteSectionRef}>
-          <summary
-            onClick={(event) => {
-              event.preventDefault();
-              toggleDisclosure(
-                event.currentTarget.parentElement as HTMLDetailsElement,
-              );
-            }}
-          >
-            <span aria-hidden="true">📝</span> Note <Curiosity />
-          </summary>
-          <div className="entry-section-fields">{fields.note}</div>
-        </details>
-      </div>
+    <form id={formId} onSubmit={submit} className="editor">
+      <label className="entry-name">Name<input autoFocus required maxLength={10000} value={draft.name} placeholder="Entry name" onChange={event=>update({name:event.target.value})}/></label>
       {sections.map((section) => (
         <div className="entry-section" key={section}>
           <details
@@ -497,7 +500,7 @@ function Editor({
         <button type="button" className="secondary" onClick={close}>
           {embedded ? "Clear" : "Cancel"}
         </button>
-        <button className="primary" type="submit">
+        <button className="primary" type="submit" disabled={filesBusy}>
           Save entry <span aria-hidden="true">💾</span>
         </button>
       </div>
@@ -513,6 +516,7 @@ function Editor({
         entries.some((e) => e.id === entry.id) ? "Edit entry" : "New entry"
       }
       close={close}
+      actions={<button type="submit" form={formId} className="primary" disabled={filesBusy}>Save entry <span aria-hidden="true">💾</span></button>}
     >
       {form}
     </Modal>
@@ -546,6 +550,11 @@ function App() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [syncFailures, setSyncFailures] = useState(0);
+  useEffect(() => {
+    if (notice !== "Changes saved to Google Sheets.") return;
+    const timer = window.setTimeout(() => setNotice(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const [syncing, setSyncing] = useState(false);
   const [signInStage, setSignInStage] = useState<"google" | "sheet" | null>(
     null,
@@ -642,6 +651,13 @@ function App() {
   function change(entries: Entry[]) {
     return commit({ ...stateRef.current, entries, dirty: true });
   }
+  function updateBoard(entryId: string, update: (items: BoardItem[]) => BoardItem[]) {
+    change(stateRef.current.entries.map(entry => entry.id === entryId ? {...entry, boardItems: update(entry.boardItems), updatedAt: new Date().toISOString()} : entry));
+  }
+  function changeBoardViews(boardViews:BoardItem[]) {
+    try { decodeBoardViews(boardViews); return commit({...stateRef.current,boardViews,dirty:true}); }
+    catch(error) { setError(message(error)); return false; }
+  }
   async function signIn() {
     if (busyRef.current) return;
     setError("");
@@ -678,10 +694,13 @@ function App() {
       const merged = current.dirty
         ? mergeEntries(current.baseEntries, current.entries, data.entries)
         : { entries: data.entries, conflicts: 0 };
+      const boardViews=current.dirty ? mergeItems(current.baseBoardViews||[],current.boardViews,data.boardViews) : data.boardViews;
       commit({
         ...current,
         entries: merged.entries,
         baseEntries: data.entries,
+        boardViews,
+        baseBoardViews: data.boardViews,
         revision: data.revision,
         lastSync: new Date().toISOString(),
       });
@@ -717,22 +736,25 @@ function App() {
     try {
       const current = stateRef.current;
       const read = () => request(current.connection, session.token, "read");
+      if(current.dirty && !reload) await uploadPendingFiles(current.entries,current.connection,session.token);
       const data = reload
         ? { ...(await read()), conflicts: 0 }
-        : await synchronize(current, read, (revision, entries) =>
+        : await synchronize(current, read, (revision, entries, boardViews) =>
             request(
               current.connection,
               session.token,
               "write",
               revision,
               entries,
+              undefined,
+              boardViews,
             ),
           );
       const latest = stateRef.current;
       // An editor can save while the network request is in flight. Rebase those
       // new edits on the acknowledged snapshot and schedule another upload.
       const changedDuringSync =
-        JSON.stringify(latest.entries) !== JSON.stringify(current.entries);
+        JSON.stringify([latest.entries,latest.boardViews]) !== JSON.stringify([current.entries,current.boardViews]);
       const rebased = changedDuringSync
         ? mergeEntries(current.entries, latest.entries, data.entries)
         : { entries: data.entries, conflicts: 0 };
@@ -741,6 +763,8 @@ function App() {
           ...latest,
           entries: rebased.entries,
           baseEntries: data.entries,
+          boardViews: changedDuringSync ? mergeItems(current.boardViews,latest.boardViews,data.boardViews||[]) : data.boardViews||[],
+          baseBoardViews: data.boardViews||[],
           revision: data.revision,
           dirty: changedDuringSync,
           lastSync: new Date().toISOString(),
@@ -772,7 +796,7 @@ function App() {
     const current = stateRef.current.entries;
     // Preserve remote changes received while this editor was open.
     const base =
-      source === "popup" && editor?.note.trim()
+      source === "popup" && editor?.name.trim()
         ? [...current.filter((e) => e.id !== entry.id), editor]
         : current;
     const merged = mergeEntries(
@@ -796,7 +820,7 @@ function App() {
   function remove(entry: Entry) {
     if (
       !confirm(
-        `Delete “${entry.note.slice(0, 80)}”? Links to this entry will also be removed.`,
+        `Delete “${entry.name.slice(0, 80)}”? Links to this entry will also be removed.`,
       )
     )
       return;
@@ -817,7 +841,7 @@ function App() {
         .map((id) => store.entries.find((e) => e.id === id))
         .find((e) => e && !requirementDone(e, date || today));
       if (blocked) {
-        setError(`Complete “${blocked.note}” first.`);
+        setError(`Complete “${blocked.name}” first.`);
         return;
       }
     }
@@ -834,7 +858,7 @@ function App() {
     };
     if (change(store.entries.map((e) => (e.id === entry.id ? updated : e)))) {
       setError("");
-      setTaskFeedback(`${done ? "Reopened" : "Completed"}: ${entry.note}`);
+      setTaskFeedback(`${done ? "Reopened" : "Completed"}: ${entry.name}`);
       if (
         !done &&
         origin &&
@@ -855,7 +879,7 @@ function App() {
   }
   function exportData() {
     const blob = new Blob(
-      [JSON.stringify({ version: 1, entries: store.entries }, null, 2)],
+      [JSON.stringify({ version: 2, entries: store.entries, boardViews:store.boardViews }, null, 2)],
       { type: "application/json" },
     );
     const url = URL.createObjectURL(blob),
@@ -883,7 +907,10 @@ function App() {
         ...incoming,
       ];
       decodeEntries(merged);
-      if (change(merged)) setNotice("Backup imported on this device.");
+      const incomingViews=decodeBoardViews(data.boardViews??[]);
+      const boardViews=[...stateRef.current.boardViews.filter(item=>!incomingViews.some(other=>other.id===item.id)),...incomingViews];
+      decodeBoardViews(boardViews);
+      if (commit({...stateRef.current,entries:merged,boardViews,dirty:true})) setNotice("Backup imported on this device.");
     } catch (e) {
       setError(message(e));
     }
@@ -891,7 +918,7 @@ function App() {
   const people = [...new Set(store.entries.flatMap((e) => e.who))].sort();
   const filtered = store.entries.filter(
     (e) =>
-      (!search || e.note.toLowerCase().includes(search.toLowerCase())) &&
+      (!search || `${e.name} ${e.note}`.toLowerCase().includes(search.toLowerCase())) &&
       (!person || e.who.includes(person)),
   );
   const todoItems = todoOccurrences(filtered, today, todoPeriod, showDone);
@@ -925,7 +952,7 @@ function App() {
       (a, b) =>
         (a.entry.beginsAt || a.entry.endsAt).localeCompare(
           b.entry.beginsAt || b.entry.endsAt,
-        ) || a.entry.note.localeCompare(b.entry.note),
+        ) || a.entry.name.localeCompare(b.entry.name),
     );
   function selectCalendarPeriod(period: TimeWindow) {
     setCalendarPeriod(period);
@@ -966,7 +993,7 @@ function App() {
         {e.task ? (
           <button
             className={`task-check ${done ? "checked" : ""}`}
-            aria-label={`${done ? "Reopen" : "Complete"} ${e.note}`}
+            aria-label={`${done ? "Reopen" : "Complete"} ${e.name}`}
             aria-pressed={done}
             disabled={busy}
             onClick={(event) => toggle(e, date, event.currentTarget)}
@@ -990,7 +1017,7 @@ function App() {
           onClick={() => setEditor(e)}
           disabled={busy}
         >
-          <strong>{e.note}</strong>
+          <strong>{e.name}</strong>
           <span className="entry-meta">
             {highlight && <span className="upcoming-pill">{highlight}</span>}
             {e.who.map((p) => (
@@ -999,10 +1026,11 @@ function App() {
               </span>
             ))}
             {e.repeat && <span>🔁 {e.repeat}</span>}
+            {e.attachments.length>0&&<span>📎 {e.attachments.length} files</span>}
             {e.requires.length > 0 && (
               <span>🔗 {e.requires.length} required</span>
             )}
-            {parent && <span>🔗 {parent.note}</span>}
+            {parent && <span>🔗 {parent.name}</span>}
             {!e.task &&
               !e.beginsOn &&
               !e.endsOn &&
@@ -1044,7 +1072,7 @@ function App() {
         </span>
         <button
           className="delete-button"
-          aria-label={`Delete ${e.note}`}
+          aria-label={`Delete ${e.name}`}
           disabled={busy}
           onClick={() => remove(e)}
         >
@@ -1070,13 +1098,13 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${view === "Board" && unlocked ? " board-workspace" : ""}`}>
       <aside className="sidebar">
         <a className="brand" href="#" onClick={() => setView("Inbox")}>
           Brain
         </a>
         <nav aria-label="Main navigation">
-          {(["Inbox", "Todo", "Calendar", "Budget"] as const).map((v) => (
+          {(["Inbox", "Todo", "Calendar", "Budget", "Board"] as const).map((v) => (
             <button
               key={v}
               className={view === v ? "active" : ""}
@@ -1167,7 +1195,7 @@ function App() {
             </div>
           )}
           {notice && (
-            <div className="banner success" role="status">
+            <div className="banner success notification-toast" role="status">
               {notice}
               <button
                 aria-label="Dismiss notification"
@@ -1225,11 +1253,11 @@ function App() {
             </section>
           ) : (
             <>
-              <section className="page-heading">
+              <section className={view === "Board" ? "screen-reader-only" : "page-heading"}>
                 <div>
                   <h1>{view}</h1>
                 </div>
-                {view !== "Inbox" && (
+                {view !== "Inbox" && view !== "Board" && (
                   <>
                     <button
                       className="primary"
@@ -1266,11 +1294,13 @@ function App() {
                   entry={inboxEntry}
                   entries={store.entries}
                   embedded
+                  connection={store.connection}
+                  token={session?.token}
                   save={(entry) => saveEntry(entry, "inbox")}
                   close={() => setInboxEntry(blankEntry())}
                 />
               </div>
-              {view !== "Inbox" && (
+              {view !== "Inbox" && view !== "Board" && (
                 <>
                   <div className="workspace-toolbar">
                     <div className="view-label">
@@ -1314,6 +1344,11 @@ function App() {
                   </div>
                 </>
               )}
+              {view === "Board" && <Board entries={store.entries} boardViews={store.boardViews} onViewsChange={changeBoardViews} connection={store.connection} token={session?.token}
+                onCreate={entry => {if(change([...stateRef.current.entries, entry])) setEditor(entry);}}
+                onPin={(entry,item) => updateBoard(entry.id, items => [...items,item])}
+                onUpdate={(entryId,itemId,patch) => updateBoard(entryId,items => items.map(item => item.id===itemId ? {...item,...patch} : item))}
+                onEdit={setEditor}/>} 
               {view === "Todo" && (
                 <>
                   <div className="range-toolbar">
@@ -1476,7 +1511,7 @@ function App() {
                                             : ""
                                         }
                                       >
-                                        {o.entry.note}
+                                        {o.entry.name}
                                       </small>
                                     ))}
                                   {items.length >
@@ -1702,6 +1737,8 @@ function App() {
       {editor && (
         <Editor
           entry={editor}
+          connection={store.connection}
+          token={session?.token}
           entries={store.entries}
           save={saveEntry}
           close={() => setEditor(null)}
@@ -1765,6 +1802,7 @@ function App() {
                     connection,
                     revision: changed ? null : store.revision,
                     baseEntries: changed ? null : store.baseEntries,
+                    baseBoardViews: changed ? null : store.baseBoardViews,
                   })
                 ) {
                   if (session) logout(session.token);

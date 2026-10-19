@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { blankEntry } from "../src/domain.ts";
 import { taskTheme, taskParticles } from "../src/personality.ts";
-const entry = (note, extra = {}) => ({ ...blankEntry(), note, ...extra });
+const entry = (note, extra = {}) => ({ ...blankEntry(), name:note, ...extra });
 test("completion particles use the task subject, including financial attributes", () => {
   for (const [note, theme] of [
     ["Pay electricity bill", "money"],

@@ -2,10 +2,14 @@ import { decodeEntries } from "./domain";
 import type { Entry } from "./domain";
 import { SyncConflict } from "./sync";
 import { BackendBusy, retryBusy } from "./request-retry";
+import { decodeBoardViews } from './board-model';
+import type { BoardItem } from './board-model';
 export type Connection = { url: string; clientId: string };
 export type Store = {
   entries: Entry[];
   baseEntries: Entry[] | null;
+  boardViews: BoardItem[];
+  baseBoardViews: BoardItem[] | null;
   revision: number | null;
   dirty: boolean;
   connection: Connection;
@@ -14,6 +18,8 @@ export type Store = {
 export const emptyStore: Store = {
   entries: [],
   baseEntries: null,
+  boardViews: [],
+  baseBoardViews: null,
   revision: null,
   dirty: false,
   connection: {
@@ -51,6 +57,8 @@ export function loadStore(): Store {
           : emptyStore.connection.clientId,
     },
     entries: decodeEntries(parsed.entries),
+    boardViews: decodeBoardViews(parsed.boardViews ?? []),
+    baseBoardViews: parsed.baseBoardViews ? decodeBoardViews(parsed.baseBoardViews) : parsed.dirty ? null : decodeBoardViews(parsed.boardViews ?? []),
     baseEntries: parsed.baseEntries
       ? decodeEntries(parsed.baseEntries)
       : parsed.dirty
@@ -71,8 +79,10 @@ export async function request(
   revision?: number,
   entries?: Entry[],
   signal?: AbortSignal,
+  boardViews?: BoardItem[],
 ): Promise<{
   entries: Entry[];
+  boardViews: BoardItem[];
   revision: number;
   user: { name: string; email: string };
 }> {
@@ -86,7 +96,7 @@ export async function request(
       redirect: "follow",
       credentials: "omit",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, token, revision, entries }),
+      body: JSON.stringify({ action, token, revision, entries, boardViews, apiVersion:4 }),
       signal: AbortSignal.any([requestSignal, AbortSignal.timeout(30000)]),
     });
     if (!response.ok)
@@ -114,6 +124,7 @@ export async function request(
         throw new SyncConflict(data.error);
       throw new Error(data.error || "Sync failed.");
     }
+    if (data.apiVersion !== 4) throw new Error('Update the Apps Script deployment to the latest board version in Code.gs, then try again.');
     if (!Number.isInteger(data.revision) || data.revision < 0)
       throw new Error("Invalid sync revision.");
     if (
@@ -124,8 +135,21 @@ export async function request(
       throw new Error("The backend did not return a verified user.");
     return {
       entries: decodeEntries(data.entries),
+      boardViews: decodeBoardViews(data.boardViews ?? []),
       revision: data.revision,
       user: data.user,
     };
   }, requestSignal);
+}
+export async function fileRequest(connection: Connection, token: string, action: 'file.get' | 'file.put', payload: Record<string,unknown>): Promise<{dataUrl?:string}> {
+  if (!validEndpoint(connection.url)) throw new Error('Configure the Apps Script URL first.');
+  const signal=AbortSignal.timeout(60000);
+  return retryBusy(async()=>{
+    const response=await fetch(connection.url,{method:'POST',credentials:'omit',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,token,...payload}),signal});
+    if(!response.ok)throw new Error(`File request failed (${response.status}).`);
+    let data;try{data=await response.json();}catch{throw new Error('The file backend did not return JSON. Check the GAS deployment.');}
+    if(!data.ok){if(data.code==='BUSY'||/another sync is in progress/i.test(data.error||''))throw new BackendBusy(data.error);throw new Error(data.error||'File request failed.');}
+    if(data.apiVersion!==2)throw new Error('Update the Apps Script deployment to enable attachments.');
+    return data;
+  },signal);
 }

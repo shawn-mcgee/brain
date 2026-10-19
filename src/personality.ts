@@ -10,7 +10,7 @@ const themes = {
   general: ["⭐", "✨", "🎉", "✅"],
 };
 export function taskTheme(entry: Entry): keyof typeof themes {
-  const text = entry.note.toLowerCase();
+  const text = `${entry.name} ${entry.note}`.toLowerCase();
   if (
     entry.budgetType ||
     entry.transactionType ||

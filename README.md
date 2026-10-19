@@ -8,8 +8,11 @@ Brain collects structured data from your family and organizes it into various li
 
 Each entry can have different attributes associated with it in various combinations.
 
+**Name**
+Each entry requires a name. Names may repeat; entries and their references use unique IDs.
+
 **Note**
-This attribute is simply arbitrary text. It could be a name, a phone number, a description, or anything else.
+An optional text enhancement for descriptions, phone numbers, or other details. It becomes the body of a sticky note or the description beneath a polaroid. Add or remove it using the Note section in the entry form.
 
 **Who**
 This attribute indicates that an entry is associated with one or more persons.
@@ -152,6 +155,26 @@ See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pa
 - A recurring task tracks completion separately for each occurrence. Todo's **everything** normally shows its earliest unfinished occurrence, including overdue occurrences. Enabling **Show completed** also displays its previously checked occurrences so they can be unchecked directly, without changing the date filter or editing the schedule. Date filters show each occurrence within the selected period and reveal checked occurrences when **Show completed** is enabled. They can also be reopened from Calendar.
 - Required tasks must be complete before their dependent task can be completed. Non-task requirements are references. A repeating prerequisite is checked at its latest occurrence on or before the dependent occurrence's date.
 - Budget shows all-time USD totals, counting each stored item once. Plans and actual transactions are separate entries; actual transactions may link to matching plans. Recurrence displays dates in Calendar and does not automatically create or count transactions.
+
+### Cork board and files
+
+Open **Board** to use the shared cork board. It starts empty: entries appear only after you add them. The two floating buttons open view controls (magnifying glass: zoom percentage, fit, recenter) and add controls (plus emoji: card, polaroid, calendar, or an existing entry). Adding a card or polaroid creates an entry; adding a calendar creates an independent view without an entry. An entry can have several cards.
+
+Cards have a drag handle, the entry name, a color swatch with eight choices, a position pin, and an archive action. Pinning locks the position until unpinned. Archiving hides the card while retaining the entry and its data; restore it from **Add → Archived items**. Drag the corner to resize. Footer tags reflect the entry's people, task status, dates and times, repetition, budget or transaction details, prerequisites, and attachments. Clicking the name or body opens the entry editor.
+
+Cards automatically become polaroids when the entry has supported image attachments and return to notes when the last image is removed. Photos start with white paper and show the first image; previous/next buttons browse additional images, fetching them lazily. Notes start yellow; calendars start blue. Custom colors are preserved.
+
+Drag the background or scroll to pan. Ctrl/Command + scroll zooms around the pointer; the zoom percentage control zooms around the viewport center. **Fit items** brings the board contents into view; **Recenter** centers the items without changing the zoom. Focus the canvas, move handle, or resize handle and use arrow keys for keyboard operation. Card positions, sizes, pins, archives, and colors synchronize between accounts; each browser remembers its own viewport.
+
+Calendar views support day, week, and month, plus a selected-day agenda. **Current** follows the local date automatically, including after midnight; **Fixed date** stays on a chosen date. Navigating previous/next switches to a fixed date. Calendar titles, settings, and layouts synchronize independently of entries. Older entry-backed calendar cards remain supported without deleting their original entries.
+
+Add the **Files** section in any entry's editor to attach multiple files (up to 20 per entry, 2 MB per file). Images can be previewed; all files can be downloaded. Pending uploads and downloaded files are cached in IndexedDB, separate from entry JSON and localStorage. Files upload before their metadata is synchronized. Image previews load when visible; downloads fetch the selected file on demand. PNG, JPEG, GIF, WebP, and AVIF receive inline previews; other formats download as files.
+
+**Update the Apps Script deployment before using this frontend.** Replace `Code.gs`, then choose **Deploy → Manage deployments → Edit → New version → Deploy**. No additional Script Properties or scopes are needed. The backend automatically adds the missing `boardItems`, `attachments`, and `name` columns to older `Entries` sheets and creates `BoardViews` for independent calendar views. Older note-only entries migrate their first line into the name and retain the remaining lines as the optional note; IDs, references, files, and card layouts are preserved. The same migration applies to local caches and old JSON backups. The frontend requires sync API version 4 to prevent a stale backend from dropping the new fields.
+
+`Attachments` (file metadata/index) and `AttachmentData` (data URL chunks) are created on the first file request. Each data URL is split into 40,000-character chunks to stay within Sheets' per-cell limit. Ordinary reads, writes, and cached snapshots contain metadata only; a separate authenticated file request reads the selected file's chunks. Both whitelisted accounts can retrieve shared attachments.
+
+Removing an attachment or deleting its entry removes its reference; stored file chunks are retained, with no automatic garbage collection yet. JSON export/import includes board layout and file metadata, **not file bytes**. Keep the backing spreadsheet for a complete backup. Unsynced local files exist only in the originating browser until upload succeeds.
 
 ### Verification
 

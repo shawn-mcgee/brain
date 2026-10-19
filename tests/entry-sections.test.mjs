@@ -6,6 +6,15 @@ import {
   availableEntrySections,
   removeEntrySection,
 } from "../src/entry-sections.ts";
+test('notes are optional removable enhancements that leave the name intact',()=>{
+  const entry={...blankEntry(),name:'Shopping',note:'Milk and eggs'};
+  assert.ok(initialEntrySections(entry).includes('note'));
+  const removed=removeEntrySection(entry,['note'],'note');
+  assert.equal(removed.entry.name,'Shopping');
+  assert.equal(removed.entry.note,'');
+  assert.equal(validateEntry(removed.entry,[removed.entry]),'');
+  assert.ok(availableEntrySections(removed.sections).includes('note'));
+});
 test("repeat availability follows attached time sections, including empty ones", () => {
   assert.equal(availableEntrySections([]).includes("repeat"), false);
   assert.equal(availableEntrySections(["begins"]).includes("repeat"), true);
@@ -14,13 +23,13 @@ test("repeat availability follows attached time sections, including empty ones",
     availableEntrySections(["begins", "repeat"]).includes("repeat"),
     false,
   );
-  const entry = { ...blankEntry(), note: "Plan", repeat: "Weekly" };
+  const entry = { ...blankEntry(), name: "Plan", repeat: "Weekly" };
   assert.match(validateEntry(entry, []), /date/);
 });
 test("removing one time section retains the other and repetition", () => {
   const entry = {
     ...blankEntry(),
-    note: "Trip",
+    name: "Trip",
     beginsOn: "2026-10-19",
     beginsAt: "09:00",
     endsOn: "2026-10-20",
@@ -45,7 +54,7 @@ test("removing the final time section removes and clears repeat state", () => {
   for (const section of ["begins", "ends"]) {
     const entry = {
       ...blankEntry(),
-      note: "Plan",
+      name: "Plan",
       beginsOn: section === "begins" ? "2026-10-19" : "",
       endsOn: section === "ends" ? "2026-10-19" : "",
       repeat: "Daily",
