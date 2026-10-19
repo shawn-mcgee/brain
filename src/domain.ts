@@ -1,4 +1,4 @@
-import { validateBoardFields } from './board-model.ts';
+import { validateBoardFields, boardColors } from './board-model.ts';
 import type { BoardItem, Attachment } from './board-model.ts';
 export const intervals = [
   "Daily",
@@ -14,6 +14,10 @@ export type Entry = {
   name: string;
   note: string;
   who: string[];
+  where: string;
+  color: string;
+  tags: string[];
+  group: string;
   task: boolean;
   completed: boolean;
   completedDates: string[];
@@ -46,6 +50,10 @@ export function blankEntry(): Entry {
     note: "",
     name: "",
     who: [],
+    where: '',
+    color: '',
+    tags: [],
+    group: '',
     task: false,
     completed: false,
     completedDates: [],
@@ -142,6 +150,7 @@ export function todoOccurrences(
   const range = period === "All" ? null : periodRange(period, today);
   const candidates = entries
     .flatMap((e) => {
+      if(e.task&&!e.beginsOn&&!e.endsOn)return [nextTask(e,today)];
       if (range) return occurrences(e, range.from, range.to);
       if (e.task) {
         const next = nextTask(e, today);
@@ -323,6 +332,7 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
   if (boardError) return boardError;
   if (!e.name.trim()) return "Give this entry a name.";
   if (e.name.length > 10000) return "Keep names under 10,000 characters.";
+  if(typeof e.where!=='string'||e.where.length>10000||typeof e.group!=='string'||e.group.length>10000||typeof e.color!=='string'||e.color!==''&&!boardColors.includes(e.color as typeof boardColors[number])||!Array.isArray(e.tags)||e.tags.length>200||e.tags.some(tag=>typeof tag!=='string'||tag.length>500))return 'Invalid location, color, tags, or group.';
   if (e.note.length > 10000) return "Keep notes under 10,000 characters.";
   if ((e.beginsAt && !e.beginsOn) || (e.endsAt && !e.endsOn))
     return "Add a date before adding a time.";
@@ -383,7 +393,7 @@ export function decodeEntries(value: unknown): Entry[] {
     if(!raw || typeof raw!=='object')return raw;
     const legacy=raw.name===undefined && typeof raw.note==='string';
     const lines=legacy?raw.note.trim().split(/\r?\n/):[];
-    return {...raw,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
+    return {...raw,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
   });
   const strings = [
     "name",

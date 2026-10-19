@@ -44,19 +44,27 @@ import TaskCelebration from "./TaskCelebration";
 import type { Celebration } from "./TaskCelebration";
 import SignInCharacter from "./SignInCharacter";
 import Curiosity from "./Curiosity";
+import AttributeInput from './AttributeInput';
+import Toast from './Toast';
+import PersonalitySurface from './PersonalitySurface';
+import {boardColors} from './board-model';
+import {entrySearchText,copyEntry,defaultSections,fancyName} from './entry-attributes';
 import { toggleDisclosure } from "./disclosure";
 import {
   sectionNames,
   sectionEmoji,
+  sectionDescriptions,
   initialEntrySections,
   availableEntrySections,
   removeEntrySection,
+  initializeEntrySection,
 } from "./entry-sections";
 import type { EntrySection as Section } from "./entry-sections";
 import "./App.css";
 
-type View = "Inbox" | "Todo" | "Calendar" | "Budget" | "Board";
+type View = "Inbox" | "Todo" | "Calendar" | "Budget" | "Board" | "Archive";
 const icons: Record<string, string> = {
+  Archive: "\u{1F4E6}",
   Board: "📌",
   Inbox: "📥",
   Todo: "✅",
@@ -84,11 +92,13 @@ function Modal({
   children,
   close,
   actions,
+  entryModal=false,
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
   actions?: ReactNode;
+  entryModal?:boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -99,6 +109,7 @@ function Modal({
   return (
     <dialog
       ref={ref}
+      className={entryModal?"entry-modal":undefined}
       onCancel={close}
       onClick={(e) => {
         if (e.target === ref.current) close();
@@ -106,7 +117,7 @@ function Modal({
     >
       <div className="modal-head">
         <h2>{title}</h2>
-        <div className="modal-head-actions">
+        {!entryModal&&<div className="modal-head-actions">
         {actions}
         <button
           type="button"
@@ -116,7 +127,7 @@ function Modal({
         >
           Close
         </button>
-        </div>
+        </div>}
       </div>
       {children}
     </dialog>
@@ -131,6 +142,8 @@ function Editor({
   embedded = false,
   connection,
   token,
+  presetSections=[],
+  onCopy,
 }: {
   entry: Entry;
   entries: Entry[];
@@ -139,13 +152,16 @@ function Editor({
   embedded?: boolean;
   connection: Connection;
   token?: string;
+  presetSections?:Section[];
+  onCopy?:(entry:Entry)=>void;
 }) {
   const formId=useId();
-  const [draft, setDraft] = useState(entry),
+  const [namePlaceholder]=useState(fancyName);
+  const [draft, setDraft] = useState(()=>({...entry,...(presetSections.includes('task')?{task:true}:{})})),
     [error, setError] = useState("");
   const [filesBusy,setFilesBusy]=useState(false);
   const [sections, setSections] = useState<Section[]>(() =>
-    initialEntrySections(entry),
+    [...new Set([...initialEntrySections(entry),...presetSections])],
   );
   const availableSections = availableEntrySections(sections);
   const sectionRefs = useRef<
@@ -175,7 +191,7 @@ function Editor({
     setSections((current) =>
       current.includes(section) ? current : [...current, section],
     );
-    if (section === "task") setDraft((current) => ({ ...current, task: true }));
+    setDraft(current=>initializeEntrySection(current,section));
     requestAnimationFrame(() => {
       const element = sectionRefs.current[section];
       if (element) {
@@ -193,6 +209,8 @@ function Editor({
       ...draft,
       name: draft.name.trim(),
       note: draft.note.trim(),
+      where:draft.where.trim(),
+      group:draft.group.trim(),
       updatedAt: new Date().toISOString(),
     };
     const issue =
@@ -223,30 +241,12 @@ function Editor({
         </label>
       </>
     ),
-    who: (
-      <>
-        <label>
-          <span className="screen-reader-only">Who</span>
-          <input
-            value={draft.who.join(", ")}
-            onChange={(e) =>
-              update({
-                who: e.target.value.split(",").map((x) => x.trimStart()),
-              })
-            }
-            onBlur={() =>
-              update({
-                who: [
-                  ...new Set(draft.who.map((x) => x.trim()).filter(Boolean)),
-                ],
-              })
-            }
-            placeholder="Names, separated by commas"
-          />
-        </label>
-      </>
-    ),
-    task: <p className="hint">This item can be marked as complete.</p>,
+    who: <AttributeInput label="Who" multiple value={draft.who} options={[...new Set(entries.flatMap(e=>e.who))].sort()} onChange={value=>update({who:[...new Set(value.split(',').map(v=>v.trim()).filter(Boolean))]})}/>,
+    where: <AttributeInput label="Where" value={draft.where} options={[...new Set(entries.map(e=>e.where).filter(Boolean))].sort()} onChange={where=>update({where})}/>,
+    group: <AttributeInput label="Group" value={draft.group} options={[...new Set(entries.map(e=>e.group).filter(Boolean))].sort()} onChange={group=>update({group})}/>,
+    tags: <AttributeInput label="Tags" multiple value={draft.tags} options={[...new Set(entries.flatMap(e=>e.tags))].sort()} onChange={value=>update({tags:[...new Set(value.split(',').map(v=>v.trim()).filter(Boolean))]})}/>,
+    color: <select aria-label="Entry color" value={draft.color} onChange={event=>update({color:event.target.value})}><option value="">Automatic</option>{boardColors.map(color=><option key={color}>{color}</option>)}</select>,
+    task: null,
     begins: (
       <>
         <div className="form-grid">
@@ -427,8 +427,9 @@ function Editor({
     ),
   };
   const form = (
-    <form id={formId} onSubmit={submit} className="editor">
-      <label className="entry-name">Name<input autoFocus required maxLength={10000} value={draft.name} placeholder="Entry name" onChange={event=>update({name:event.target.value})}/></label>
+    <form id={formId} onSubmit={submit} onInvalidCapture={event=>{const details=(event.target as HTMLElement).closest('details');if(details)details.open=true;}} className="editor">
+      <div className="editor-fields">
+      <label className="entry-name">Name<small className="attribute-description">A name for this entry. Names can be shared by different entries.</small><input autoFocus required maxLength={10000} value={draft.name} placeholder={namePlaceholder} onChange={event=>update({name:event.target.value})}/></label>
       {sections.map((section) => (
         <div className="entry-section" key={section}>
           <details
@@ -448,7 +449,7 @@ function Editor({
             >
               <span className="entry-section-heading">
                 <span aria-hidden="true">{sectionEmoji[section]}</span>{" "}
-                {sectionNames[section]} <Curiosity />
+                {sectionNames[section]} <Curiosity attribute />
               </span>
               <button
                 type="button"
@@ -462,7 +463,7 @@ function Editor({
                 <span aria-hidden="true">✖️</span> Remove
               </button>
             </summary>
-            <div className="entry-section-fields">{fields[section]}</div>
+            <div className="entry-section-fields"><p className="attribute-description">{sectionDescriptions[section]}</p>{fields[section]}</div>
           </details>
         </div>
       ))}
@@ -496,12 +497,14 @@ function Editor({
           {error}
         </p>
       )}
+      </div>
       <div className="modal-actions">
+        {onCopy&&entries.some(saved=>saved.id===entry.id)&&<button type="button" className="secondary" disabled={filesBusy} onClick={()=>onCopy(draft)}>Copy</button>}
         <button type="button" className="secondary" onClick={close}>
           {embedded ? "Clear" : "Cancel"}
         </button>
         <button className="primary" type="submit" disabled={filesBusy}>
-          Save entry <span aria-hidden="true">💾</span>
+          Save <span aria-hidden="true">💾</span>
         </button>
       </div>
     </form>
@@ -516,7 +519,7 @@ function Editor({
         entries.some((e) => e.id === entry.id) ? "Edit entry" : "New entry"
       }
       close={close}
-      actions={<button type="submit" form={formId} className="primary" disabled={filesBusy}>Save entry <span aria-hidden="true">💾</span></button>}
+      entryModal
     >
       {form}
     </Modal>
@@ -542,6 +545,7 @@ function App() {
   const [view, setView] = useState<View>("Inbox"),
     [editor, setEditor] = useState<Entry | null>(null),
     [settings, setSettings] = useState(false);
+  const [copyDraftId,setCopyDraftId]=useState('');
   const [inboxEntry, setInboxEntry] = useState(blankEntry);
   const [search, setSearch] = useState(""),
     [person, setPerson] = useState(""),
@@ -550,11 +554,6 @@ function App() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [syncFailures, setSyncFailures] = useState(0);
-  useEffect(() => {
-    if (notice !== "Changes saved to Google Sheets.") return;
-    const timer = window.setTimeout(() => setNotice(""), 3500);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
   const [syncing, setSyncing] = useState(false);
   const [signInStage, setSignInStage] = useState<"google" | "sheet" | null>(
     null,
@@ -566,8 +565,9 @@ function App() {
   const [calendarAnchor, setCalendarAnchor] = useState(() =>
     dateKey(new Date()),
   );
-  const [calendarPeriod, setCalendarPeriod] = useState<TimeWindow>("All");
-  const [todoPeriod, setTodoPeriod] = useState<Period | "All">("All");
+  const [calendarPeriod, setCalendarPeriod] = useState<TimeWindow>("This Month");
+  const [todoPeriod, setTodoPeriod] = useState<Period | "All">("This Week");
+  const [todoAnchor,setTodoAnchor]=useState(()=>dateKey(new Date()));
   const [selectedDay, setSelectedDay] = useState(dateKey(new Date()));
   const [connection, setConnection] = useState(store.connection);
   const stateRef = useRef(store),
@@ -918,10 +918,10 @@ function App() {
   const people = [...new Set(store.entries.flatMap((e) => e.who))].sort();
   const filtered = store.entries.filter(
     (e) =>
-      (!search || `${e.name} ${e.note}`.toLowerCase().includes(search.toLowerCase())) &&
+      (!search || entrySearchText(e).includes(search.toLowerCase())) &&
       (!person || e.who.includes(person)),
   );
-  const todoItems = todoOccurrences(filtered, today, todoPeriod, showDone);
+  const todoItems = todoOccurrences(filtered, todoAnchor, todoPeriod, showDone);
   const calendarRange = periodRange(
     calendarPeriod === "All" ? "This Month" : calendarPeriod,
     calendarAnchor,
@@ -986,7 +986,7 @@ function App() {
       done = isDone(e, date),
       parent = store.entries.find((x) => x.id === e.budgetId);
     return (
-      <article
+      <PersonalitySurface
         className={`entry-row ${done ? "done" : ""} ${celebrations.some((c) => c.entryId === e.id && c.date === date) ? "celebrating" : ""}`}
         key={`${e.id}:${date || ""}`}
       >
@@ -1066,6 +1066,7 @@ function App() {
             )}
           </span>
         )}
+        {e.task&&<span className="task-anticipation" aria-hidden="true">{done?"\u{1F440} \u{2049}\uFE0F":"\u{1F440} \u{203C}\uFE0F"}</span>}
         <span className="entry-sweat" aria-hidden="true">
           <span>💧</span>
           <span>💧</span>
@@ -1078,7 +1079,7 @@ function App() {
         >
           🗑️ Delete
         </button>
-      </article>
+      </PersonalitySurface>
     );
   }
   function empty(title: string, description: string) {
@@ -1086,13 +1087,6 @@ function App() {
       <div className="empty">
         <h3>{title}</h3>
         <p>{description}</p>
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() => setEditor(blankEntry())}
-        >
-          + Add an entry
-        </button>
       </div>
     );
   }
@@ -1104,7 +1098,7 @@ function App() {
           Brain
         </a>
         <nav aria-label="Main navigation">
-          {(["Inbox", "Todo", "Calendar", "Budget", "Board"] as const).map((v) => (
+          {(["Inbox", "Todo", "Calendar", "Budget", "Board", "Archive"] as const).map((v) => (
             <button
               key={v}
               className={view === v ? "active" : ""}
@@ -1120,6 +1114,16 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
+          {session && (
+            <div className="account">
+              <span className="avatar">{session.name.charAt(0)}</span>
+              <div>
+                <strong>{session.name}</strong>
+                <small title={session.email}>{session.email}</small>
+              </div>
+
+            </div>
+          )}
           <button
             onClick={() => {
               setConnection(store.connection);
@@ -1128,14 +1132,7 @@ function App() {
           >
             <span>⚙️ Settings</span>
           </button>
-          {session && (
-            <div className="account">
-              <span className="avatar">{session.name.charAt(0)}</span>
-              <div>
-                <strong>{session.name}</strong>
-                <small title={session.email}>{session.email}</small>
-              </div>
-              <button
+          {session&&(              <button
                 aria-label="Sign out"
                 disabled={busy || syncing}
                 onClick={() => {
@@ -1147,9 +1144,7 @@ function App() {
                 }}
               >
                 Sign out
-              </button>
-            </div>
-          )}
+              </button>)}
         </div>
       </aside>
       <main>
@@ -1194,17 +1189,7 @@ function App() {
               </button>
             </div>
           )}
-          {notice && (
-            <div className="banner success notification-toast" role="status">
-              {notice}
-              <button
-                aria-label="Dismiss notification"
-                onClick={() => setNotice("")}
-              >
-                ×
-              </button>
-            </div>
-          )}
+          {notice&&<Toast key={notice} message={notice} onClose={()=>setNotice('')}/>}
           {!unlocked ? (
             <section className="welcome">
               <SignInCharacter />
@@ -1260,7 +1245,10 @@ function App() {
                 {view !== "Inbox" && view !== "Board" && (
                   <>
                     <button
-                      className="primary"
+                      className="floating-add-entry"
+                      type="button"
+                      aria-label="Add entry"
+                      title="Add entry"
                       disabled={busy}
                       onClick={() =>
                         setEditor({
@@ -1272,7 +1260,7 @@ function App() {
                         })
                       }
                     >
-                      + <span>Add entry</span>
+                      <span aria-hidden="true">{'\u{2795}'}</span>
                     </button>
                   </>
                 )}
@@ -1317,7 +1305,7 @@ function App() {
                                   month: "long",
                                   year: "numeric",
                                 })
-                            : "All-time overview"}
+                            : view === "Archive" ? "All entries" : "All-time overview"}
                       </h2>
                     </div>
                     <div className="filters">
@@ -1348,27 +1336,14 @@ function App() {
                 onCreate={entry => {if(change([...stateRef.current.entries, entry])) setEditor(entry);}}
                 onPin={(entry,item) => updateBoard(entry.id, items => [...items,item])}
                 onUpdate={(entryId,itemId,patch) => updateBoard(entryId,items => items.map(item => item.id===itemId ? {...item,...patch} : item))}
+                onRemoveCard={(entryId,itemId)=>updateBoard(entryId,items=>items.filter(item=>item.id!==itemId))}
+                onEntryChange={(entry,patch)=>change(stateRef.current.entries.map(current=>current.id===entry.id?{...current,...patch,updatedAt:new Date().toISOString()}:current))}
+                onLayout={moves=>change(stateRef.current.entries.map(entry=>({...entry,boardItems:entry.boardItems.map(item=>{const move=moves.find(move=>move.entryId===entry.id&&move.itemId===item.id);return move?{...item,...move.patch}:item}),...(moves.some(move=>move.entryId===entry.id)?{updatedAt:new Date().toISOString()}:{} )})))}
                 onEdit={setEditor}/>} 
               {view === "Todo" && (
                 <>
-                  <div className="range-toolbar">
-                    <TimeWindowFilter
-                      label="Todo"
-                      value={todoPeriod}
-                      onChange={setTodoPeriod}
-                    />
-                    <span>
-                      {todoPeriod === "All"
-                        ? "All tasks and upcoming dates"
-                        : `${formatDate(periodRange(todoPeriod, today).from)} – ${formatDate(periodRange(todoPeriod, today).to)}`}
-                    </span>
-                  </div>
+                  <div className="range-toolbar"><TimeWindowFilter label="Todo" value={todoPeriod} anchor={todoAnchor} today={today} onChange={period=>{setTodoPeriod(period);setTodoAnchor(today)}} onMove={direction=>{if(todoPeriod!=='All')setTodoAnchor(shiftPeriod(todoPeriod,todoAnchor,direction))}}/></div>
                   <div className="list-subheader">
-                    <span>
-                      {todoPeriod === "All"
-                        ? "Includes undated and overdue tasks. Requirements appear first."
-                        : "Entries overlapping this period. View everything to include undated tasks and older overdue tasks."}
-                    </span>
                     <label className="check-label">
                       <input
                         type="checkbox"
@@ -1379,8 +1354,8 @@ function App() {
                     </label>
                   </div>
                   <section className="entry-list">
-                    {todoItems.length
-                      ? todoItems.map((o) =>
+                    {todoItems.some(o=>o.entry.beginsOn||o.entry.endsOn)
+                      ? todoItems.filter(o=>o.entry.beginsOn||o.entry.endsOn).map((o) =>
                           row(
                             o.entry,
                             o.date,
@@ -1388,28 +1363,17 @@ function App() {
                             occurrenceHighlight(o, today),
                           ),
                         )
-                      : empty(
+                      : todoItems.length ? null : empty(
                           "No matching entries",
                           "No tasks or upcoming dates match this view.",
                         )}
                   </section>
+                  {todoItems.some(o=>!o.entry.beginsOn&&!o.entry.endsOn)&&<section aria-label="Tasks for any time"><h3>Any time</h3><div className="entry-list">{todoItems.filter(o=>!o.entry.beginsOn&&!o.entry.endsOn).map(o=>row(o.entry))}</div></section>}
                 </>
               )}
               {view === "Calendar" && (
                 <>
-                  <div className="range-toolbar">
-                    <TimeWindowFilter
-                      label="Calendar"
-                      value={calendarPeriod}
-                      onChange={selectCalendarPeriod}
-                    />
-                    {calendarPeriod !== "All" && (
-                      <span>
-                        {formatDate(calendarRange.from)} –{" "}
-                        {formatDate(calendarRange.to)}
-                      </span>
-                    )}
-                  </div>
+                  <div className="range-toolbar"><TimeWindowFilter label="Calendar" value={calendarPeriod} anchor={calendarAnchor} today={today} onChange={selectCalendarPeriod} onMove={moveCalendar}/></div>
                   {calendarPeriod === "All" ? (
                     <>
                       <p className="hint calendar-all-hint">
@@ -1428,37 +1392,6 @@ function App() {
                     </>
                   ) : (
                     <>
-                      <div className="calendar-controls">
-                        <p>
-                          {calendarLayout === "Today"
-                            ? "Your day at a glance, including ongoing entries."
-                            : "Repeating and multi-day entries appear on each relevant day."}
-                        </p>
-                        <div>
-                          <button
-                            className="secondary"
-                            onClick={() => selectCalendarPeriod(calendarLayout)}
-                          >
-                            Back to now
-                          </button>
-                          <button
-                            aria-label="Previous period"
-                            className="icon-button"
-                            disabled={calendarRange.from <= "1900-01-01"}
-                            onClick={() => moveCalendar(-1)}
-                          >
-                            ⬅️
-                          </button>
-                          <button
-                            aria-label="Next period"
-                            className="icon-button"
-                            disabled={calendarRange.to >= "2200-12-31"}
-                            onClick={() => moveCalendar(1)}
-                          >
-                            ➡️
-                          </button>
-                        </div>
-                      </div>
                       {calendarLayout !== "Today" && (
                         <section
                           tabIndex={0}
@@ -1637,8 +1570,10 @@ function App() {
                       )}
                     </>
                   )}
+                  {filtered.some(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn)&&<section aria-label="Tasks for any time"><h3>Any time</h3><div className="entry-list">{filtered.filter(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn).map(entry=>row(entry))}</div></section>}
                 </>
               )}
+              {view === "Archive"&&<section className="entry-list" aria-label="All entries">{filtered.length?filtered.map(entry=>row(entry)):empty('No matching entries','Search the entry archive or add an entry.')}</section>}
               {view === "Budget" && (
                 <>
                   <div className="money-summary">
@@ -1740,6 +1675,8 @@ function App() {
           connection={store.connection}
           token={session?.token}
           entries={store.entries}
+          presetSections={store.entries.some(e=>e.id===editor.id)||editor.id===copyDraftId?[]:defaultSections(view)}
+          onCopy={entry=>{const copy=copyEntry(entry);setCopyDraftId(copy.id);setEditor(copy)}}
           save={saveEntry}
           close={() => setEditor(null)}
         />

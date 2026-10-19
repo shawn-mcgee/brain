@@ -32,6 +32,6 @@ export default function BoardCalendar({item,entries,onUpdate,onEdit}:{item:Board
       {['S','M','T','W','T','F','S'].map((day,index)=><span key={index}>{day}</span>)}
       {Array.from({length:count},(_,index)=>{const date=addDays(start,index),inRange=date>=range.from&&date<=range.to,items=events.filter(event=>event.start<=date&&event.end>=date);return <button key={date} type="button" disabled={!inRange} aria-label={`${shortDate(date)}: ${items.length} entries`} aria-pressed={selected===date} className={`${!inRange?'outside':''} ${date===today?'is-today':''}`} onClick={()=>setPicked(date)}>{parseDate(date).getDate()}{items.length>0&&<small aria-hidden="true">●</small>}</button>})}
     </div>}
-    <div className="board-day-items"><strong>{shortDate(selected)}</strong>{agenda.length?agenda.map(event=><button key={event.key} type="button" onClick={()=>onEdit(event.entry)}><span>{event.entry.beginsAt||event.entry.endsAt||'All day'}</span>{event.entry.name}</button>):<p>No entries.</p>}</div>
+    <div className="board-day-items"><strong>{shortDate(selected)}</strong>{agenda.length?agenda.map(event=><div key={event.key} className="board-agenda-entry"><div className="board-agenda-text"><small>{event.entry.beginsAt||event.entry.endsAt||'All day'}</small>{event.entry.name}</div><button type="button" className="board-agenda-edit" title="Edit entry" aria-label={`Edit ${event.entry.name}`} onClick={()=>onEdit(event.entry)}><span aria-hidden="true">{'\u270F\uFE0F'}</span></button></div>):<p>No entries.</p>}</div>
   </div>;
 }

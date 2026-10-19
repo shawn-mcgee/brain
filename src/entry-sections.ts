@@ -3,6 +3,10 @@ export const sectionNames = {
   note: 'Note',
   task: "Task",
   who: "Who",
+  where: 'Where',
+  color: 'Color',
+  tags: 'Tags',
+  group: 'Group',
   begins: "Begins",
   ends: "Ends/Due",
   repeat: "Repeats",
@@ -15,7 +19,11 @@ export const sectionEmoji: Record<EntrySection, string> = {
   note: '📝',
   task: "✅",
   who: "👥",
-  begins: "🌅",
+  where: '📍',
+  color: '🎨',
+  tags: '🏷️',
+  group: '\u{1F4C1}',
+  begins: "\u{1F552}",
   ends: "🏁",
   repeat: "🔁",
   requires: "🔗",
@@ -27,6 +35,10 @@ export function initialEntrySections(entry: Entry): EntrySection[] {
   if(entry.note)sections.push('note');
   if (entry.task) sections.push("task");
   if (entry.who.length) sections.push("who");
+  if(entry.where)sections.push('where');
+  if(entry.color)sections.push('color');
+  if(entry.tags.length)sections.push('tags');
+  if(entry.group)sections.push('group');
   if (entry.beginsOn || entry.beginsAt) sections.push("begins");
   if (entry.endsOn || entry.endsAt) sections.push("ends");
   if (entry.repeat) sections.push("repeat");
@@ -55,6 +67,10 @@ export function removeEntrySection(
     note: {note:''},
     task: { task: false, completed: false, completedDates: [] },
     who: { who: [] },
+    where: {where:''},
+    color: {color:''},
+    tags: {tags:[]},
+    group: {group:''},
     begins: { beginsOn: "", beginsAt: "" },
     ends: { endsOn: "", endsAt: "" },
     repeat: { repeat: "", completedDates: [] },
@@ -71,3 +87,24 @@ export function removeEntrySection(
   }
   return { entry: updated, sections: remaining };
 }
+export function initializeEntrySection(entry:Entry,section:EntrySection):Entry {
+  if(section==='begins')return {...entry,beginsOn:entry.endsOn,beginsAt:entry.endsAt};
+  if(section==='ends')return {...entry,endsOn:entry.beginsOn,endsAt:entry.beginsAt};
+  if(section==='task')return {...entry,task:true};
+  return entry;
+}
+export const sectionDescriptions:Record<EntrySection,string>={
+  note:'Extra details shown in the card body or photo caption.',
+  task:'This item can be marked complete.',
+  who:'People associated with this entry. Separate names with commas.',
+  where:'A place or location associated with this entry.',
+  color:'The paper color used for this entry on the board.',
+  tags:'Searchable labels. Separate tags with commas.',
+  group:'One group name; cards in the same group move together on the board.',
+  begins:'When this entry starts. Time is optional.',
+  ends:'When this entry ends or is due. Time is optional.',
+  repeat:'How often the dated entry repeats.',
+  requires:'Entries that must be complete before this task can be completed.',
+  money:'A budget plan or an actual income or expense.',
+  attachments:'Files attached to this entry, loaded when needed.',
+};

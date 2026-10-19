@@ -4,6 +4,7 @@ import { SyncConflict } from "./sync";
 import { BackendBusy, retryBusy } from "./request-retry";
 import { decodeBoardViews } from './board-model';
 import type { BoardItem } from './board-model';
+import {SYNC_API_VERSION,checkSyncProtocol} from './backend-protocol';
 export type Connection = { url: string; clientId: string };
 export type Store = {
   entries: Entry[];
@@ -96,7 +97,7 @@ export async function request(
       redirect: "follow",
       credentials: "omit",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, token, revision, entries, boardViews, apiVersion:4 }),
+      body: JSON.stringify({ action, token, revision, entries, boardViews, apiVersion:SYNC_API_VERSION }),
       signal: AbortSignal.any([requestSignal, AbortSignal.timeout(30000)]),
     });
     if (!response.ok)
@@ -111,6 +112,7 @@ export async function request(
         "Google did not return JSON. Deploy as a web app accessible to Anyone, then use its /exec URL.",
       );
     }
+    checkSyncProtocol(data);
     if (!data.ok) {
       if (
         data.code === "BUSY" ||
@@ -124,7 +126,6 @@ export async function request(
         throw new SyncConflict(data.error);
       throw new Error(data.error || "Sync failed.");
     }
-    if (data.apiVersion !== 4) throw new Error('Update the Apps Script deployment to the latest board version in Code.gs, then try again.');
     if (!Number.isInteger(data.revision) || data.revision < 0)
       throw new Error("Invalid sync revision.");
     if (

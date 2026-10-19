@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {blankEntry,decodeEntries} from '../src/domain.ts';
-import {newBoardItem,screenToBoard,validateBoardFields,mergeItems,decodeBoardViews,effectiveCardKind,effectiveCardColor} from '../src/board-model.ts';
+import {newBoardItem,screenToBoard,validateBoardFields,mergeItems,decodeBoardViews,effectiveCardKind,effectiveCardColor,zoomAtPoint,wheelZoomFactor} from '../src/board-model.ts';
 import {calendarWindow} from '../src/calendar-model.ts';
 import {entryTags} from '../src/board-tags.ts';
 import {mergeEntries} from '../src/sync.ts';
@@ -66,6 +66,26 @@ test('footer tags reflect entry attributes and omit absent enhancements',()=>{
 test('board screen coordinates account for both panning and zoom',()=>{
   assert.deepEqual(screenToBoard({x:300,y:250},{x:100,y:50,zoom:2}),{x:100,y:100});
   assert.deepEqual(screenToBoard({x:0,y:0},{x:200,y:-100,zoom:.5}),{x:-400,y:200});
+});
+
+test('gesture zoom keeps the board point under the cursor fixed through repeated zooms and limits',()=>{
+  for(const point of [{x:17,y:42},{x:873,y:591},{x:400,y:300}]) {
+    let view={x:-153,y:87,zoom:.7};const world=screenToBoard(point,view);
+    for(const delta of [-4,-12,-80,5,100,100,100,-15]) {
+      view=zoomAtPoint(view,point,wheelZoomFactor(delta,0,600));
+      const after=screenToBoard(point,view);
+      assert.ok(Math.abs(after.x-world.x)<1e-9);assert.ok(Math.abs(after.y-world.y)<1e-9);
+      assert.ok(view.zoom>=.25&&view.zoom<=2);
+    }
+  }
+});
+
+test('zoom responds strongly to small pinch deltas and normalizes wheel units',()=>{
+  assert.ok(wheelZoomFactor(-10,0,600)>1.1);
+  assert.equal(wheelZoomFactor(-16,0,600),wheelZoomFactor(-1,1,600));
+  assert.ok(wheelZoomFactor(-1000,0,600)<1.5);
+  const forward=wheelZoomFactor(-10,0,600),back=wheelZoomFactor(10,0,600);
+  assert.ok(Math.abs(forward*back-1)<1e-12);
 });
 test('concurrent board edits merge by card and field; unpinning keeps the entry',()=>{
   const a=newBoardItem('sticky'),b=newBoardItem('polaroid');

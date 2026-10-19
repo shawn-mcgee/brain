@@ -117,7 +117,7 @@ function backend() {
   vm.runInContext(source, context);
   const call = (body) =>
     JSON.parse(
-      context.doPost({ postData: { contents: JSON.stringify(body) } }),
+      context.doPost({ postData: { contents: JSON.stringify({apiVersion:6,...body}) } }),
     );
   return {
     call,
@@ -221,9 +221,9 @@ test("legacy Entries headers and rows migrate without losing entry data", () => 
   api.clearCache();
   const result=api.call({action:'read',token:'two'});
   assert.equal(result.ok,true);
-  assert.equal(result.apiVersion,4);
+  assert.equal(result.apiVersion,6);
   assert.deepEqual(result.entries,[entry]);
-  assert.deepEqual(Array.from(api.cells[0].slice(-3)),['boardItems','attachments','name']);
+  assert.deepEqual(Array.from(api.cells[0].slice(-5)),['name','where','color','tags','group']);
 });
 
 test("attachments round-trip in chunks and ordinary sync returns metadata only", () => {
@@ -318,4 +318,38 @@ test('20-column Sheets migrate names without changing IDs, files, or card metada
   assert.equal(JSON.parse(api.cells[1][20]),'Legacy name');
   assert.equal(JSON.parse(api.cells[1][1]),'Legacy body');
   assert.equal(result.revision,2);
+});
+
+test('entry enhancements and group widget state survive sync and reject malformed values',()=>{
+  const api=backend(),entry={...blankEntry(),name:'Dinner',where:'The library',color:'blue',tags:['family','book club'],group:'Evening'};
+  const group={...newBoardItem('group'),title:'Evening',pinned:true,collapsed:true};
+  const saved=api.call({action:'write',token:'one',revision:0,entries:[entry],boardViews:[group]});
+  assert.equal(saved.ok,true);
+  api.clearCache();
+  const read=api.call({action:'read',token:'two'});
+  assert.deepEqual(read.entries,[entry]);assert.deepEqual(read.boardViews,[group]);
+  for(const patch of [{color:'red'},{tags:[42]},{where:[]},{group:[]},{tags:Array(201).fill('tag')}])assert.equal(api.call({action:'write',token:'one',revision:1,entries:[{...entry,...patch}]}).ok,false);
+});
+
+test('21-column workspaces add attribute defaults and retain IDs and notes',()=>{
+  const api=backend(),entry={...blankEntry(),name:'Existing name',note:'Keep this body'};
+  api.call({action:'write',token:'one',revision:0,entries:[entry]});
+  api.cells[0]=api.cells[0].slice(0,21);api.cells[1]=api.cells[1].slice(0,21);api.clearCache();
+  const read=api.call({action:'read',token:'two'});
+  assert.equal(read.ok,true);assert.deepEqual(read.entries,[entry]);assert.equal(read.revision,2);
+  assert.equal(JSON.parse(api.cells[1][21]),'');assert.deepEqual(JSON.parse(api.cells[1][23]),[]);
+});
+
+test('outdated clients cannot write before upgrading, leaving existing board groups intact',()=>{
+  const api=backend(),group={...newBoardItem('group'),title:'Family',collapsed:true};
+  assert.equal(api.call({action:'write',token:'one',revision:0,entries:[],boardViews:[group]}).ok,true);
+  const reads=api.reads();
+  for(const apiVersion of [undefined,4,5]) {
+    assert.equal(api.call({action:'write',token:'two',apiVersion,revision:1,entries:[],boardViews:[]}).code,'UPGRADE_REQUIRED');
+  }
+  assert.equal(api.reads(),reads);
+  const result=api.call({action:'read',token:'one'});
+  assert.deepEqual(result.boardViews,[group]);
+  assert.equal(result.revision,1);
+  assert.equal(result.apiVersion,6);
 });

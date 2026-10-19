@@ -171,11 +171,11 @@ test("Todo date filters include start-only, end-only and overlapping spans with 
     new Set(
       todoOccurrences(entries, "2026-10-19", period).map((o) => o.entry.id),
     );
-  assert.deepEqual(ids("Today"), new Set(["start", "end", "span"]));
-  assert.deepEqual(ids("This Week"), new Set(["start", "end", "span", "week"]));
+  assert.deepEqual(ids("Today"), new Set(["start", "end", "span", "undated"]));
+  assert.deepEqual(ids("This Week"), new Set(["start", "end", "span", "week", "undated"]));
   assert.deepEqual(
     ids("This Month"),
-    new Set(["start", "end", "span", "week", "month", "old-task"]),
+    new Set(["start", "end", "span", "week", "month", "old-task", "undated"]),
   );
 });
 test("Todo filtered recurrence expands each occurrence and filters completion individually", () => {

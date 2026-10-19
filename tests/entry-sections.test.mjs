@@ -5,7 +5,32 @@ import {
   initialEntrySections,
   availableEntrySections,
   removeEntrySection,
+  initializeEntrySection,
 } from "../src/entry-sections.ts";
+test('adding either date section copies the other date and optional time',()=>{
+  for(const time of ['', '09:30']) {
+    const due={...blankEntry(),name:'Appointment',endsOn:'2026-10-22',endsAt:time};
+    const begins=initializeEntrySection(due,'begins');
+    assert.equal(begins.beginsOn,due.endsOn);
+    assert.equal(begins.beginsAt,time);
+    assert.equal(due.beginsOn,'');
+    assert.equal(validateEntry(begins,[begins]),'');
+    const start={...blankEntry(),name:'Appointment',beginsOn:'2026-10-22',beginsAt:time};
+    const ends=initializeEntrySection(start,'ends');
+    assert.equal(ends.endsOn,start.beginsOn);
+    assert.equal(ends.endsAt,time);
+    assert.equal(start.endsOn,'');
+    assert.equal(validateEntry(ends,[ends]),'');
+  }
+});
+test('adding the first date section leaves values blank and readding copies current values',()=>{
+  assert.equal(initializeEntrySection(blankEntry(),'begins').beginsOn,'');
+  const entry={...blankEntry(),name:'Plan',beginsOn:'2026-10-19',endsOn:'2026-10-20',endsAt:'15:00'};
+  const removed=removeEntrySection(entry,['begins','ends'],'begins');
+  const readded=initializeEntrySection({...removed.entry,endsOn:'2026-10-23'},'begins');
+  assert.equal(readded.beginsOn,'2026-10-23');
+  assert.equal(readded.beginsAt,'15:00');
+});
 test('notes are optional removable enhancements that leave the name intact',()=>{
   const entry={...blankEntry(),name:'Shopping',note:'Milk and eggs'};
   assert.ok(initialEntrySections(entry).includes('note'));

@@ -41,7 +41,7 @@ export function mergeEntries(
       if (["id", "createdAt", "updatedAt"].includes(key)) continue;
       if (key === 'boardItems') { merged.boardItems=mergeItems(b?.boardItems||[],l.boardItems||[],r.boardItems||[]); continue; }
       if (key === 'attachments') { merged.attachments=mergeItems(b?.attachments||[],l.attachments||[],r.attachments||[]); continue; }
-      if (["who", "requires", "completedDates"].includes(key)) {
+      if (["who", "requires", "completedDates", "tags"].includes(key)) {
         const original = (b?.[key] || []) as string[],
           left = l[key] as string[],
           right = r[key] as string[];
