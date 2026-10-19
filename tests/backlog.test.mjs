@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {blankEntry,decodeEntries,todoOccurrences,occurrences} from '../src/domain.ts';
-import {entrySearchText,copyEntry,defaultSections,fancyName} from '../src/entry-attributes.ts';
+import {entrySearchText,copyEntry,defaultSections,fancyName,mediaPlaceholderReferences} from '../src/entry-attributes.ts';
 import {viewTitle} from '../src/view-title.ts';
 import {newBoardItem,resizeBoardItem,decodeBoardViews,effectiveCardColor} from '../src/board-model.ts';
 import {groupBounds,packCards,translateCards} from '../src/board-groups.ts';
@@ -42,7 +42,8 @@ test('copying creates an unsaved independent draft with shared values and no boa
   assert.notEqual(copy.id,entry.id);assert.equal(copy.name,'Copy of Original');assert.equal(copy.note,'Body');assert.equal(copy.where,'Home');assert.deepEqual(copy.boardItems,[]);
   copy.who.push('Alex');assert.deepEqual(entry.who,['Sam']);
   assert.deepEqual(defaultSections('Budget'),['money']);assert.deepEqual(defaultSections('Todo'),['note','task','ends']);assert.deepEqual(defaultSections('Calendar'),['note','begins','where']);
-  const names=new Set();for(let a=0;a<80;a++)for(let b=0;b<80;b++){let call=0;names.add(fancyName(()=>((call++?b:a)+.1)/80))}assert.equal(names.size,6400);
+  const count=80+Object.values(mediaPlaceholderReferences).reduce((sum,theme)=>sum+theme.beginnings.length,0);
+  const names=new Set();for(let a=0;a<count;a++)for(let b=0;b<count;b++){let call=0;names.add(fancyName(()=>((call++?b:a)+.1)/count))}assert.equal(names.size,13456);
 });
 test('calendar resizing preserves its aspect ratio within stored layout bounds',()=>{
   const calendar=newBoardItem('calendar');assert.ok(calendar.width>=800);
