@@ -9,6 +9,7 @@ export const intervals = [
   "Annually",
 ] as const;
 export type Interval = (typeof intervals)[number];
+export type ListItem = {id:string;text:string;completed:boolean;completedDates:string[]};
 export type Entry = {
   id: string;
   name: string;
@@ -22,6 +23,7 @@ export type Entry = {
   completed: boolean;
   completedDates: string[];
   requires: string[];
+  list: ListItem[];
   beginsOn: string;
   beginsAt: string;
   endsOn: string;
@@ -58,6 +60,7 @@ export function blankEntry(): Entry {
     completed: false,
     completedDates: [],
     requires: [],
+    list: [],
     beginsOn: "",
     beginsAt: "",
     endsOn: "",
@@ -328,6 +331,12 @@ export function sortTasks(entries: Entry[], today: string): Entry[] {
   return result;
 }
 export function validateEntry(e: Entry, entries: Entry[]): string {
+  if(!Array.isArray(e.list)||e.list.length>200||JSON.stringify(e.list).length>40000)return 'Keep lists under 200 lines and 40,000 characters.';
+  const listIds=new Set<string>();
+  for(const line of e.list){
+    if(!line||typeof line.id!=='string'||!line.id||line.id.length>100||listIds.has(line.id)||typeof line.text!=='string'||!line.text.trim()||line.text.length>1000||typeof line.completed!=='boolean'||!Array.isArray(line.completedDates)||line.completedDates.some(d=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||d<'1900-01-01'||d>'2200-12-31'||dateKey(parseDate(d))!==d))return 'Invalid list item.';
+    listIds.add(line.id);
+  }
   const boardError = validateBoardFields(e.boardItems || [], e.attachments || []);
   if (boardError) return boardError;
   if (!e.name.trim()) return "Give this item a name.";
@@ -381,9 +390,9 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
     return !!entries.find((x) => x.id === id)?.requires.some(cycle);
   }
   if (e.requires.some((id) => !entries.some((x) => x.id === id)))
-    return "A required item no longer exists.";
+    return "An item you are waiting on no longer exists.";
   if (e.requires.some(cycle))
-    return "Requirements cannot create a dependency cycle.";
+    return "Waiting on links cannot create a dependency cycle.";
   return "";
 }
 export function decodeEntries(value: unknown): Entry[] {
@@ -393,7 +402,7 @@ export function decodeEntries(value: unknown): Entry[] {
     if(!raw || typeof raw!=='object')return raw;
     const legacy=raw.name===undefined && typeof raw.note==='string';
     const lines=legacy?raw.note.trim().split(/\r?\n/):[];
-    return {...raw,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
+    return {...raw,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),list:raw.list??[],where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
   });
   const strings = [
     "name",

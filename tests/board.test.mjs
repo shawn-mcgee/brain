@@ -27,6 +27,16 @@ test('cards promote and demote automatically as image attachments change',()=>{
   assert.equal(newBoardItem('calendar').color,'blue');
 });
 
+test('checklist cards default to green while explicit colors and calendar colors take precedence',()=>{
+  const card=newBoardItem('sticky');
+  assert.equal(effectiveCardColor(card,[],'',true),'green');
+  assert.equal(effectiveCardColor(newBoardItem('polaroid'),[],'',true),'green');
+  assert.equal(effectiveCardColor(card,[],'pink',true),'pink');
+  assert.equal(effectiveCardColor({...card,customColor:true,color:'purple'},[],'',true),'purple');
+  assert.equal(effectiveCardColor(newBoardItem('calendar'),[],'',true),'blue');
+  assert.equal(effectiveCardColor(card,[],'',false),'yellow');
+});
+
 test('legacy card options merge when another browser adds pin, color, or archive fields',()=>{
   const legacy={id:'legacy',kind:'sticky',x:0,y:0,width:280,height:300,z:1,color:'yellow'};
   const result=mergeItems([legacy],[{...legacy,x:50}],[{...legacy,pinned:true,archived:true,customColor:true,color:'purple'}]);

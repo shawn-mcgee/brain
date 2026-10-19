@@ -11,7 +11,7 @@ export function entryTags(entry:Entry):string[] {
   if(entry.endsOn)tags.push(`Due ${date(entry.endsOn)}${entry.endsAt?' '+entry.endsAt:''}`);
   if(entry.repeat)tags.push(`↻ ${entry.repeat}`);
   if(entry.budgetType||entry.transactionType)tags.push(`${entry.budgetType?'Budget':'Transaction'} · ${entry.budgetType||entry.transactionType} ${new Intl.NumberFormat(undefined,{style:'currency',currency:'USD'}).format(entry.amount)}`);
-  if(entry.requires.length)tags.push(`${entry.requires.length} prerequisite${entry.requires.length===1?'':'s'}`);
+  if(entry.requires.length)tags.push(`Waiting on ${entry.requires.length}`);
   if(entry.attachments.length)tags.push(`📎 ${entry.attachments.length}`);
   return tags;
 }

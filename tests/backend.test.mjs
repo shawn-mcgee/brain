@@ -117,7 +117,7 @@ function backend() {
   vm.runInContext(source, context);
   const call = (body) =>
     JSON.parse(
-      context.doPost({ postData: { contents: JSON.stringify({apiVersion:6,...body}) } }),
+      context.doPost({ postData: { contents: JSON.stringify({apiVersion:7,...body}) } }),
     );
   return {
     call,
@@ -221,9 +221,9 @@ test("legacy Entries headers and rows migrate without losing entry data", () => 
   api.clearCache();
   const result=api.call({action:'read',token:'two'});
   assert.equal(result.ok,true);
-  assert.equal(result.apiVersion,6);
+  assert.equal(result.apiVersion,7);
   assert.deepEqual(result.entries,[entry]);
-  assert.deepEqual(Array.from(api.cells[0].slice(-5)),['name','where','color','tags','group']);
+  assert.deepEqual(Array.from(api.cells[0].slice(-6)),['name','where','color','tags','group','list']);
 });
 
 test("attachments round-trip in chunks and ordinary sync returns metadata only", () => {
@@ -351,5 +351,21 @@ test('outdated clients cannot write before upgrading, leaving existing board gro
   const result=api.call({action:'read',token:'one'});
   assert.deepEqual(result.boardViews,[group]);
   assert.equal(result.revision,1);
-  assert.equal(result.apiVersion,6);
+  assert.equal(result.apiVersion,7);
+});
+
+
+test('checklists migrate from 25 columns, round-trip, and validate line data',()=>{
+  const api=backend(),entry={...blankEntry(),name:'Checklist',task:true,list:[{id:'line',text:'Wash dishes',completed:false,completedDates:[]}]};
+  const write=api.call({action:'write',token:'one',revision:0,entries:[entry]});
+  assert.equal(write.ok,true);assert.equal(api.cells[0].at(-1),'list');
+  assert.equal(api.call({action:'read',token:'one'}).entries[0].list[0].text,'Wash dishes');
+  const bad={...entry,list:[{...entry.list[0],completed:'yes'}]};
+  assert.equal(api.call({action:'write',token:'one',revision:write.revision,entries:[bad]}).ok,false);
+  // Simulate the previous schema and a cold cache.
+  const legacy=backend();legacy.cells.push(api.cells[0].slice(0,25),api.cells[1].slice(0,25));
+  const migrated=legacy.call({action:'read',token:'one'});
+  assert.equal(migrated.ok,true);assert.equal(migrated.apiVersion,7);
+  assert.deepEqual(migrated.entries[0].list,[]);assert.equal(legacy.cells[0][25],'list');
+  assert.equal(legacy.call({action:'write',token:'one',apiVersion:6,revision:migrated.revision,entries:[]}).code,'UPGRADE_REQUIRED');
 });

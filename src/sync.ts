@@ -2,6 +2,7 @@ import { decodeEntries } from "./domain.ts";
 import type { Entry } from "./domain.ts";
 import { mergeItems } from './board-model.ts';
 import type { BoardItem } from './board-model.ts';
+import {reconcileList} from './checklist-model.ts';
 export class SyncConflict extends Error {}
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
@@ -41,6 +42,13 @@ export function mergeEntries(
       if (["id", "createdAt", "updatedAt"].includes(key)) continue;
       if (key === 'boardItems') { merged.boardItems=mergeItems(b?.boardItems||[],l.boardItems||[],r.boardItems||[]); continue; }
       if (key === 'attachments') { merged.attachments=mergeItems(b?.attachments||[],l.attachments||[],r.attachments||[]); continue; }
+      if (key === 'list') {
+        merged.list=mergeItems(b?.list||[],l.list||[],r.list||[]).map(line=>{
+          const original=b?.list?.find(item=>item.id===line.id)?.completedDates||[],left=l.list?.find(item=>item.id===line.id),right=r.list?.find(item=>item.id===line.id);
+          if(!left||!right)return line;
+          return {...line,completedDates:[...new Set([...left.completedDates,...right.completedDates])].filter(day=>!original.includes(day)||left.completedDates.includes(day)&&right.completedDates.includes(day))};
+        });continue;
+      }
       if (["who", "requires", "completedDates", "tags"].includes(key)) {
         const original = (b?.[key] || []) as string[],
           left = l[key] as string[],
@@ -57,6 +65,7 @@ export function mergeEntries(
         if (!same(l[key], r[key])) clash = true;
       }
     }
+    Object.assign(merged,reconcileList(merged));
     merged.createdAt = [l.createdAt, r.createdAt].sort()[0];
     merged.updatedAt = [l.updatedAt, r.updatedAt].sort().at(-1)!;
     // Concurrent edits to coupled fields (e.g. beginning/end) may be invalid together.

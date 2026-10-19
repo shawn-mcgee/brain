@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { addDays, dateKey, occurrences, parseDate, shiftPeriod } from './domain';
 import type { Entry } from './domain';
 import { calendarWindow } from './calendar-model';
@@ -9,10 +9,11 @@ const shortDate=(date:string)=>parseDate(date).toLocaleDateString(undefined,{wee
 export default function BoardCalendar({item,entries,onUpdate,onEdit}:{item:BoardItem;entries:Entry[];onUpdate:(patch:Partial<BoardItem>)=>void;onEdit:(entry:Entry)=>void}) {
   const [today,setToday]=useState(()=>dateKey(new Date()));
   useEffect(()=>{const refresh=()=>setToday(dateKey(new Date()));const timer=window.setInterval(refresh,60000);window.addEventListener('focus',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh)}},[]);
-  const range=calendarWindow(item,today);
+  const range=useMemo(()=>calendarWindow(item,today),[item,today]);
   const [picked,setPicked]=useState<string|null>(null);
   const selected=picked&&picked>=range.from&&picked<=range.to?picked:range.anchor;
-  const events=entries.flatMap(entry=>occurrences(entry,range.from,range.to));
+  const {from,to}=range;
+  const events=useMemo(()=>entries.flatMap(entry=>occurrences(entry,from,to)),[entries,from,to]);
   const agenda=events.filter(event=>event.start<=selected&&event.end>=selected);
   const start=range.period==='month'?addDays(range.from,-parseDate(range.from).getDay()):range.from;
   const count=range.period==='month'?42:7;
@@ -32,6 +33,6 @@ export default function BoardCalendar({item,entries,onUpdate,onEdit}:{item:Board
       {['S','M','T','W','T','F','S'].map((day,index)=><span key={index}>{day}</span>)}
       {Array.from({length:count},(_,index)=>{const date=addDays(start,index),inRange=date>=range.from&&date<=range.to,items=events.filter(event=>event.start<=date&&event.end>=date);return <button key={date} type="button" disabled={!inRange} aria-label={`${shortDate(date)}: ${items.length} items`} aria-pressed={selected===date} className={`${!inRange?'outside':''} ${date===today?'is-today':''}`} onClick={()=>setPicked(date)}>{parseDate(date).getDate()}{items.length>0&&<small aria-hidden="true">●</small>}</button>})}
     </div>}
-    <div className="board-day-items"><strong>{shortDate(selected)}</strong>{agenda.length?agenda.map(event=><div key={event.key} className="board-agenda-entry"><div className="board-agenda-text"><small>{event.entry.beginsAt||event.entry.endsAt||'All day'}</small>{event.entry.name}</div><button type="button" className="board-agenda-edit" title="Edit item" aria-label={`Edit ${event.entry.name}`} onClick={()=>onEdit(event.entry)}><span aria-hidden="true">{'\u270F\uFE0F'}</span></button></div>):<p>No items.</p>}</div>
+    <div className="board-day-items"><strong>{shortDate(selected)}</strong>{agenda.length?agenda.map(event=><div key={event.key} className={`board-agenda-entry ${event.entry.color?`item-colored board-${event.entry.color}`:''}`}><div className="board-agenda-text"><small>{event.entry.beginsAt||event.entry.endsAt||'All day'}</small>{event.entry.name}</div><button type="button" className="board-agenda-edit" title="Edit item" aria-label={`Edit ${event.entry.name}`} onClick={()=>onEdit(event.entry)}><span aria-hidden="true">{'\u270F\uFE0F'}</span></button></div>):<p>No items.</p>}</div>
   </div>;
 }

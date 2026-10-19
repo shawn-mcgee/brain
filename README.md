@@ -20,7 +20,7 @@ This attribute indicates that an item is associated with one or more persons.
 **Task**
 This attribute indicates that an item is a task that has a binary completion status(Done, or Not Done).
 
-**Requires**
+**Waiting on**
 This attribute indicates a one-way dependency between items. For example, if task `A` requires task `B`, then task `B` must be completed before task `A` can be completed. _Requirements do no have to be tasks_
 
 **Begins On**
@@ -60,7 +60,7 @@ This attribute indicates that an item is a tracked expense item (an actual trans
 
 #### Inbox
 
-The Inbox tab embeds a simple item form directly in the page. Note is immediately visible. Buttons at the bottom add **Task**, **Who**, **Begins**, **Ends/Due**, **Repeats**, **Requires**, or **Money** as expandable sections, appended in the order selected. Repeats is available only while Begins or Ends/Due is attached; saving a repeating item still requires an actual date. Removing the final time section also removes Repeats and clears its repetition/completion history. Each section can be collapsed without clearing its values. **Remove** clears the section's form values and returns its button to the bottom, even when the section is collapsed. Existing sections are shown when editing an item; removals affect the saved item only after saving. Saving creates an item and resets the form; Clear resets it without saving. Drafts remain when switching tabs. The other views use the same form in a popup through **Add item**.
+The Inbox tab embeds a simple item form directly in the page. Note is immediately visible. Buttons at the bottom add **Task**, **Who**, **Begins**, **Ends/Due**, **Repeats**, **Waiting on**, or **Money** as expandable sections, appended in the order selected. Repeats is available only while Begins or Ends/Due is attached; saving a repeating item still requires an actual date. Removing the final time section also removes Repeats and clears its repetition/completion history. Each section can be collapsed without clearing its values. **Remove** clears the section's form values and returns its button to the bottom, even when the section is collapsed. Existing sections are shown when editing an item; removals affect the saved item only after saving. Saving creates an item and resets the form; Clear resets it without saving. Drafts remain when switching tabs. The other views use the same form in a popup through **Add item**.
 
 #### Todo
 
@@ -168,7 +168,7 @@ The popup scrolls its fields while keeping **Copy**, **Cancel**, and **Save** av
 
 Open **Board** to use the shared cork board. It starts empty: items appear only after you add them. The two floating buttons open view controls (magnifying glass: zoom percentage, fit, recenter) and add controls (plus emoji: card, polaroid, calendar, or an existing item). Adding a card or polaroid creates an item; adding a calendar creates an independent view without an item. An item can have several cards.
 
-Cards have a draggable header, the item name, a color swatch with eight choices, a position pin, and a ✖️ remove button. Pinning locks the position until unpinned. Removing a card from the board retains its item and data in **Inventory**; add it back using **Add → Pin existing item**. Drag the corner to resize. Footer tags reflect the item's people, task status, dates and times, repetition, budget or transaction details, prerequisites, and attachments. Only the pencil button opens the item editor; titles, notes, and photo captions are read-only on the board. Calendar names become editable after clicking their pencil button.
+Cards have a draggable header, the item name, a color swatch with eight choices, a position pin, and a ✖️ remove button. Pinning locks the position until unpinned. Removing a card from the board retains its item and data in **Inventory**; add it back using **Add → Pin existing item**. Drag the corner to resize. Footer tags reflect the item's people, task status, dates and times, repetition, budget or transaction details, prerequisites, and attachments. The pencil opens the full item editor. Click a card name, note, caption, or checklist line to edit it inline; leaving the field saves and Escape cancels. Enter saves a name or list line; Ctrl/Command+Enter saves multiline notes and captions. Task checkboxes and checklist controls work directly on the card, including adding and removing lines. Images open the preview. Notes appear before task and checklist controls, with content aligned to the top. Checklist cards default to a cool mint green unless a color is explicitly selected. Calendar names can also be edited by clicking them.
 
 Cards automatically become polaroids when the item has supported image attachments and return to notes when the last image is removed. Photos start with white paper and show the first image; previous/next buttons browse additional images, fetching them lazily. Notes start yellow; calendars start blue. Custom colors are preserved.
 
@@ -180,7 +180,7 @@ Calendar views support day, week, and month, plus a selected-day agenda. **Curre
 
 Add the **Files** section in any item's editor to attach multiple files (up to 20 per item, 2 MB per file). Images can be previewed; all files can be downloaded. Pending uploads and downloaded files are cached in IndexedDB, separate from item JSON and localStorage. Files upload before their metadata is synchronized. Image previews load when visible; downloads fetch the selected file on demand. PNG, JPEG, GIF, WebP, and AVIF receive inline previews; other formats download as files.
 
-**Update the Apps Script deployment before using this frontend.** Replace `Code.gs`, then choose **Deploy → Manage deployments → Edit → New version → Deploy**. No additional Script Properties or scopes are needed. The backend automatically adds the missing `boardItems`, `attachments`, `name`, `where`, `color`, `tags`, and `group` columns to older `Entries` sheets and creates `BoardViews` for independent calendar views and group pin/collapse settings. Older note-only items migrate their first line into the name and retain the remaining lines as the optional note; IDs, references, files, and card layouts are preserved. The same migration applies to local caches and old JSON backups. The frontend requires sync API version 6 to prevent a stale backend from dropping the new fields.
+**Update the Apps Script deployment before using this frontend.** Replace `Code.gs`, then choose **Deploy → Manage deployments → Edit → New version → Deploy**. No additional Script Properties or scopes are needed. The backend automatically adds the missing `boardItems`, `attachments`, `name`, `where`, `color`, `tags`, `group`, and `list` columns to older `Entries` sheets and creates `BoardViews` for independent calendar views and group pin/collapse settings. Older note-only items migrate their first line into the name and retain the remaining lines as the optional note; IDs, references, files, and card layouts are preserved. The same migration applies to local caches and old JSON backups. The frontend requires sync API version 7 to prevent a stale backend from dropping the new fields.
 
 `Attachments` (file metadata/index) and `AttachmentData` (data URL chunks) are created on the first file request. Each data URL is split into 40,000-character chunks to stay within Sheets' per-cell limit. Ordinary reads, writes, and cached snapshots contain metadata only; a separate authenticated file request reads the selected file's chunks. Both whitelisted accounts can retrieve shared attachments.
 
@@ -199,3 +199,16 @@ npm run preview
 ```
 
 Tests cover recurrence and leap-year clamping, overlapping calendar spans, dependency cycles and ordering, per-occurrence task completion, data validation, backend whitelist enforcement, stale-write protection, and safe Sheet serialization. Backend tests use local Apps Script mocks; live Google consent, deployed GAS permissions, and cross-origin redirects need the setup smoke test above.
+
+
+### Lists and Waiting on
+
+**Waiting on** selects multiple existing items. Tasks in that selection must be completed before this task can be completed; other items remain references. Existing links are preserved.
+
+Add **List** in the item form to create a checklist. Lines can be added, edited, removed, and checked. Lists also appear on item rows and board cards. On a task, checking the final line completes the task; unchecking any line reopens it. Checking or unchecking the task checks or unchecks the entire list. Waiting on tasks still block completion. A list without the Task attribute works as an independent checklist. Repeating tasks track checklist progress separately for each occurrence.
+
+List metadata is stored in the new JSON `list` column on `Entries`. Existing Sheets, browser caches, and backups gain an empty list automatically. Sync API version 7 prevents older clients or deployments from silently discarding checklist data. Deploy the updated Apps Script as a new web-app version before syncing this frontend.
+
+**Add list** in the board?s plus menu creates a green card with Note and List sections ready to use. Task is off by default. An empty list remains available on that card after reopening the board.
+
+**Pin existing item** in the board?s plus menu opens a searchable inventory popup. Filter by person, group, type, and board status. Items already placed on the board are dimmed and disabled, including items in collapsed groups. The popup stays open so multiple items can be pinned.

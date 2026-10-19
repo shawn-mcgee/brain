@@ -32,6 +32,8 @@ import {
 import type { Store } from "./storage";
 import type { Connection } from './storage';
 import Attachments from './Attachments';
+import Checklist from './Checklist';
+import {setTaskDone} from './checklist-model';
 import Board from './Board';
 import type { BoardItem } from './board-model';
 import { mergeItems, decodeBoardViews } from './board-model';
@@ -227,6 +229,7 @@ function Editor({
     } else save(cleaned);
   }
   const fields = {
+    list: <Checklist entry={draft} entries={entries} editable onChange={setDraft}/>,
     attachments: <Attachments value={draft.attachments} entryId={draft.id} connection={connection} token={token} onChange={attachments=>update({attachments})} onBusyChange={setFilesBusy}/>,
     note: (
       <>
@@ -245,7 +248,7 @@ function Editor({
     where: <AttributeInput label="Where" value={draft.where} options={[...new Set(entries.map(e=>e.where).filter(Boolean))].sort()} onChange={where=>update({where})}/>,
     group: <AttributeInput label="Group" value={draft.group} options={[...new Set(entries.map(e=>e.group).filter(Boolean))].sort()} onChange={group=>update({group})}/>,
     tags: <AttributeInput label="Tags" multiple value={draft.tags} options={[...new Set(entries.flatMap(e=>e.tags))].sort()} onChange={value=>update({tags:[...new Set(value.split(',').map(v=>v.trim()).filter(Boolean))]})}/>,
-    color: <select aria-label="Thought color" value={draft.color} onChange={event=>update({color:event.target.value})}><option value="">Automatic</option>{boardColors.map(color=><option key={color}>{color}</option>)}</select>,
+    color: <div className="item-color-options" role="group" aria-label="Item color"><button type="button" className="item-color-automatic" aria-pressed={!draft.color} onClick={()=>update({color:''})}>Automatic</button>{boardColors.map(color=><button key={color} type="button" className={`item-color-swatch board-${color}`} aria-label={color} title={color} aria-pressed={draft.color===color} onClick={()=>update({color})}>{draft.color===color&&<span aria-hidden="true">✓</span>}</button>)}</div>,
     task: null,
     begins: (
       <>
@@ -328,7 +331,7 @@ function Editor({
     requires: (
       <>
         <p className="hint">
-          Required tasks must be done first. Other items act as reference
+          Select any items this item is waiting on. Tasks must be done first; other items act as reference
           information.
         </p>
         {entries.filter((e) => e.id !== draft.id).length ? (
@@ -353,7 +356,7 @@ function Editor({
               ))}
           </div>
         ) : (
-          <p className="muted">Add another item to link a requirement.</p>
+          <p className="muted">Add another item to wait on.</p>
         )}
       </>
     ),
@@ -845,17 +848,7 @@ function App() {
         return;
       }
     }
-    const updated = {
-      ...entry,
-      updatedAt: new Date().toISOString(),
-      ...(entry.repeat && date
-        ? {
-            completedDates: done
-              ? entry.completedDates.filter((d) => d !== date)
-              : [...entry.completedDates, date],
-          }
-        : { completed: !done }),
-    };
+    const updated = setTaskDone(entry,!done,date);
     if (change(store.entries.map((e) => (e.id === entry.id ? updated : e)))) {
       setError("");
       setTaskFeedback(`${done ? "Reopened" : "Completed"}: ${entry.name}`);
@@ -975,6 +968,7 @@ function App() {
       .filter((e) => (planned ? e.budgetType : e.transactionType) === type)
       .reduce((n, e) => n + e.amount, 0);
   function row(e: Entry, date?: string, end?: string, highlight?: string) {
+    if(e.repeat&&!date)date=e.beginsOn||e.endsOn||undefined;
     const due =
         end ??
         (e.repeat && date
@@ -987,7 +981,7 @@ function App() {
       parent = store.entries.find((x) => x.id === e.budgetId);
     return (
       <PersonalitySurface
-        className={`entry-row ${done ? "done" : ""} ${celebrations.some((c) => c.entryId === e.id && c.date === date) ? "celebrating" : ""}`}
+        className={`entry-row ${e.color?`item-colored board-${e.color}`:''} ${done ? "done" : ""} ${celebrations.some((c) => c.entryId === e.id && c.date === date) ? "celebrating" : ""}`}
         key={`${e.id}:${date || ""}`}
       >
         {e.task ? (
@@ -1012,6 +1006,7 @@ function App() {
                 : "📝"}
           </span>
         )}
+        <div className="entry-main">
         <button
           className="entry-content"
           onClick={() => setEditor(e)}
@@ -1028,7 +1023,7 @@ function App() {
             {e.repeat && <span>🔁 {e.repeat}</span>}
             {e.attachments.length>0&&<span>📎 {e.attachments.length} files</span>}
             {e.requires.length > 0 && (
-              <span>🔗 {e.requires.length} required</span>
+              <span>🔗 Waiting on {e.requires.length}</span>
             )}
             {parent && <span>🔗 {parent.name}</span>}
             {!e.task &&
@@ -1041,6 +1036,8 @@ function App() {
             <Curiosity />
           </span>
         </button>
+        {e.list.length>0&&<Checklist entry={e} entries={store.entries} date={date} disabled={busy} onChange={updated=>change(store.entries.map(item=>item.id===updated.id?updated:item))}/>}
+        </div>
         {(e.budgetType || e.transactionType) && (
           <span
             className={`amount ${(e.budgetType || e.transactionType) === "income" ? "positive" : ""}`}
@@ -1438,11 +1435,11 @@ function App() {
                                     .map((o) => (
                                       <small
                                         key={o.key}
-                                        className={
+                                        className={`${o.entry.color?`item-colored board-${o.entry.color}`:''} ${
                                           isDone(o.entry, o.date)
                                             ? "completed-event"
                                             : ""
-                                        }
+                                        }`}
                                       >
                                         {o.entry.name}
                                       </small>
@@ -1675,7 +1672,7 @@ function App() {
           connection={store.connection}
           token={session?.token}
           entries={store.entries}
-          presetSections={store.entries.some(e=>e.id===editor.id)||editor.id===copyDraftId?[]:defaultSections(view)}
+          presetSections={editor.boardItems.some(item=>item.showList)?['note','list']:store.entries.some(e=>e.id===editor.id)||editor.id===copyDraftId?[]:defaultSections(view)}
           onCopy={entry=>{const copy=copyEntry(entry);setCopyDraftId(copy.id);setEditor(copy)}}
           save={saveEntry}
           close={() => setEditor(null)}
