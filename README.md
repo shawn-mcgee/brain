@@ -142,7 +142,7 @@ See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pa
 
 ### Data and synchronization behavior
 
-- Thoughts are saved locally after each edit and sync automatically one second after the last edit while signed in. Clean workspaces pull remote changes every 30 seconds. **Sync now** starts an immediate sync, and reconnecting to the network triggers another attempt. Access tokens still expire normally; sign in again when prompted.
+- Items are saved locally after each edit and sync automatically one second after the last edit while signed in. Clean workspaces pull remote changes every 30 seconds. **Sync now** starts an immediate sync, and reconnecting to the network triggers another attempt. Access tokens still expire normally; sign in again when prompted.
 - Both accounts share the same family dataset. A script lock and shared revision reject stale writes instead of silently overwriting another browser's changes.
 - On a revision conflict, the app downloads the latest snapshot, performs a three-way merge against its saved last-synced snapshot, and retries up to five writes per sync attempt. Independent item and field changes combine; list fields combine additions and removals. A deletion removes an unchanged item, but a concurrent edit survives a deletion. Concurrent changes to the same scalar field retain the local version and preserve the remote version as a separate item labeled **Version preserved during automatic merge**. Invalid combined dates or financial types also preserve both versions. Dangling links are detached, and dependency edges that would create a cycle are removed with a merge notice.
 - Local edits made during a sync are rebased onto the acknowledged snapshot and queued for another upload. Network failures leave unsynced local changes intact and retry with exponential backoff, capped at 30 seconds. If the browser closes, changes remain cached for the next sign-in; this is not a background service worker.
@@ -156,13 +156,13 @@ See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pa
 - Required tasks must be complete before their dependent task can be completed. Non-task requirements are references. A repeating prerequisite is checked at its latest occurrence on or before the dependent occurrence's date.
 - Budget shows all-time USD totals, counting each stored item once. Plans and actual transactions are separate items; actual transactions may link to matching plans. Recurrence displays dates in Calendar and does not automatically create or count transactions.
 
-### Thought attributes and editing
+### Item attributes and editing
 
-**Inventory** shows every item, including items without cards, dates, tasks, or financial details. Its search checks names, notes, people, locations, tags, groups, and colors. Thoughts can be edited or deleted there.
+**Inventory** shows every item, including items without cards, dates, tasks, or financial details. Its search checks names, notes, people, locations, tags, groups, and colors. Items can be edited or deleted there.
 
 Who, Where, Tags, and Group autocomplete from existing items while allowing new values. Separate multiple people or tags with commas. An item belongs to one Group; Color uses the board's eight-color palette and applies to all its cards. Attribute descriptions explain the fields. Context-specific new forms start with Money in Budget, Note/Task/Ends-Due in Todo, and Note/Begins/Where in Calendar. Name placeholders have 400 literary combinations.
 
-The popup scrolls its fields while keeping **Copy**, **Cancel**, and **Save** available in the bottom action row. Copy creates an unsaved draft with a new ID and a **Copy of** name; it does not create an item until Save. Thought field values and attachment references are copied, while board placements are cleared. All success notifications have a six-second countdown ring around the dismiss control; hovering or focusing a toast pauses its timer.
+The popup scrolls its fields while keeping **Copy**, **Cancel**, and **Save** available in the bottom action row. Copy creates an unsaved draft with a new ID and a **Copy of** name; it does not create an item until Save. Item field values and attachment references are copied, while board placements are cleared. All success notifications have a six-second countdown ring around the dismiss control; hovering or focusing a toast pauses its timer.
 
 ### Cork board and files
 

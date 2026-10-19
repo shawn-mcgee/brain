@@ -814,8 +814,8 @@ function App() {
         merged.conflicts
           ? "Concurrent versions were preserved as separate items."
           : session
-            ? "Thought saved. Syncing automatically…"
-            : "Thought saved on this device.",
+            ? "Item saved. Syncing automatically…"
+            : "Item saved on this device.",
       );
       setError("");
     }
