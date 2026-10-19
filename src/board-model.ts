@@ -43,6 +43,14 @@ export function zoomAtPoint(view:{x:number;y:number;zoom:number},point:{x:number
   const world=screenToBoard(point,view),zoom=Math.max(.25,Math.min(2,view.zoom*factor));
   return {x:point.x-world.x*zoom,y:point.y-world.y*zoom,zoom};
 }
+type TouchPoint={x:number;y:number};
+export function pinchBoardView(view:{x:number;y:number;zoom:number},start:readonly [TouchPoint,TouchPoint],current:readonly [TouchPoint,TouchPoint]){
+  const midpoint=(points:readonly [TouchPoint,TouchPoint])=>({x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2});
+  const distance=(points:readonly [TouchPoint,TouchPoint])=>Math.hypot(points[1].x-points[0].x,points[1].y-points[0].y);
+  const anchor=midpoint(start),next=midpoint(current);
+  const zoomed=zoomAtPoint(view,anchor,distance(current)/Math.max(1,distance(start)));
+  return {...zoomed,x:zoomed.x+next.x-anchor.x,y:zoomed.y+next.y-anchor.y};
+}
 export function wheelZoomFactor(delta:number,mode:number,pageHeight:number) {
   const pixels=delta*(mode===1?16:mode===2?pageHeight:1);
   // Respond to small pinch deltas while keeping large wheel ticks manageable.

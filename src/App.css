@@ -1535,7 +1535,7 @@ dialog::backdrop {
 .app-shell:has(.floating-add-entry) .main-content { padding-bottom:84px; }
 
 /* Let the board fill its workspace, with controls floating over the canvas. */
-.board-workspace { height:100dvh; }
+.board-workspace { height:100dvh; min-height:0; max-height:100dvh; overflow:hidden; }
 .board-workspace > main { display:flex; flex-direction:column; min-height:0; }
 .board-workspace .topbar, .board-workspace .local-banner, .board-workspace footer { display:none; }
 .board-workspace .notification-toast { top:8px; bottom:auto; }
@@ -1556,7 +1556,7 @@ dialog::backdrop {
 .board-toolbar > select { width:auto; max-width:100%; }
 .board-toolbar button, .board-toolbar select, .board-pin-menu summary, .board-help summary { min-height:44px; padding:4px 8px; }
 .board-zoom { gap:2px; }
-.board-workspace .board-viewport { flex:1; height:auto; min-height:240px; border:0; border-radius:0; }
+.board-workspace .board-viewport { flex:1; height:auto; min-height:0; border:0; border-radius:0; }
 .board-toolbar .board-pin-menu, .board-help { position:static; }
 .board-toolbar .board-pin-menu[open] > .board-pin-options { top:auto; bottom:calc(100% + 6px); left:auto; right:0; width:320px; max-width:100%; max-height:min(360px, 55dvh); overflow:auto; padding:8px; border-radius:8px; }
 .board-pin-options input { width:100%; margin-bottom:4px; }

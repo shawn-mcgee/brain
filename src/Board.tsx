@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { Entry } from './domain';
 import { blankEntry } from './domain';
-import { newBoardItem, screenToBoard, resizeBoardItem, zoomAtPoint, wheelZoomFactor } from './board-model';
+import { newBoardItem, screenToBoard, resizeBoardItem, zoomAtPoint, wheelZoomFactor, pinchBoardView } from './board-model';
 import type { BoardItem, BoardKind } from './board-model';
 import type { Connection } from './storage';
 import BoardCard from './BoardCard';
@@ -24,6 +24,43 @@ export default function Board({entries,boardViews,onViewsChange,connection,token
   const [groupPreview,setGroupPreview]=useState<Record<string,Partial<BoardItem>>>({});
   const groupGesture=useRef<{pointer:number;startX:number;startY:number;cards:{entry:Entry;item:BoardItem}[];points:{id:string;x:number;y:number}[]}|null>(null);
   const gesture=useRef<{pointer:number;mode:'pan'|'move'|'resize';startX:number;startY:number;view:Viewport;entryId?:string;item?:BoardItem;patch?:Partial<BoardItem>}|null>(null);
+  const touches=useRef(new Map<number,{x:number;y:number}>());
+  const pinch=useRef<{ids:[number,number];points:[{x:number;y:number},{x:number;y:number}];view:Viewport}|null>(null);
+  const suppressClickUntil=useRef(0);
+  function touchPoint(event:ReactPointerEvent<HTMLElement>){const rect=viewport.current!.getBoundingClientRect();return {x:event.clientX-rect.left,y:event.clientY-rect.top};}
+  function touchStart(event:ReactPointerEvent<HTMLElement>){
+    if(event.pointerType!=='touch')return;
+    touches.current.set(event.pointerId,touchPoint(event));
+    if(touches.current.size<2)return;
+    event.preventDefault();event.stopPropagation();
+    if(pinch.current)return;
+    const ids=[...touches.current.keys()].slice(0,2) as [number,number];
+    pinch.current={ids,points:[touches.current.get(ids[0])!,touches.current.get(ids[1])!],view};
+    gesture.current=null;groupGesture.current=null;setPreview(null);setGroupPreview({});
+    for(const id of ids)viewport.current?.setPointerCapture(id);
+    suppressClickUntil.current=event.timeStamp+500;
+  }
+  function touchMove(event:ReactPointerEvent<HTMLElement>){
+    if(event.pointerType!=='touch'||!touches.current.has(event.pointerId))return;
+    touches.current.set(event.pointerId,touchPoint(event));
+    const current=pinch.current;if(!current)return;
+    event.preventDefault();event.stopPropagation();
+    const [a,b]=current.ids.map(id=>touches.current.get(id));
+    if(a&&b)setView(pinchBoardView(current.view,current.points,[a,b]));
+  }
+  function touchEnd(event:ReactPointerEvent<HTMLElement>){
+    if(event.pointerType!=='touch')return;
+    touches.current.delete(event.pointerId);
+    if(!pinch.current)return;
+    event.preventDefault();event.stopPropagation();suppressClickUntil.current=event.timeStamp+500;
+    // Rebase when a finger lifts so one-finger panning can continue without a jump.
+    pinch.current=null;gesture.current=null;
+    if(event.type!=='pointercancel'&&touches.current.size===1){
+      const [id,point]=[...touches.current][0],rect=viewport.current!.getBoundingClientRect();
+      gesture.current={pointer:id,mode:'pan',startX:point.x+rect.left,startY:point.y+rect.top,view};
+    }
+    if(viewport.current?.hasPointerCapture(event.pointerId))viewport.current.releasePointerCapture(event.pointerId);
+  }
   const all=useMemo(()=>[...entries.flatMap(entry=>entry.boardItems.map(item=>({entry,item}))),...boardViews.filter(item=>item.kind==='calendar').map(item=>({entry:undefined,item}))].filter(({item})=>!item.archived),[entries,boardViews]);
   // CSS z-index controls stacking; keep DOM order stable to preserve pointer capture.
   const groups=useMemo(()=>[...new Set(all.flatMap(({entry})=>entry?.group?[entry.group]:[]))].map(name=>{
@@ -116,7 +153,7 @@ export default function Board({entries,boardViews,onViewsChange,connection,token
     </div>
     {pickerOpen&&<BoardInventoryPicker entries={entries} onPin={entry=>add('sticky',entry)} onClose={()=>{setPickerOpen(false);requestAnimationFrame(()=>addButton.current?.focus());}}/>}
     {error&&<p className="error" role="alert">{error}</p>}
-    <div ref={viewport} tabIndex={0} className="board-viewport" aria-label="Board canvas. Drag to pan or use arrow keys." style={{backgroundPosition:`${view.x}px ${view.y}px`,backgroundSize:`${24*view.zoom}px ${24*view.zoom}px`}} onPointerDown={event=>{if(!(event.target as HTMLElement).closest('.board-card, .board-group-controls'))begin(event,'pan')}} onPointerMove={move} onPointerUp={event=>finish(event)} onPointerCancel={event=>finish(event,true)} onKeyDown={event=>{if(event.target!==event.currentTarget)return;const delta=event.shiftKey?100:40;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();setView(v=>({...v,x:v.x+(event.key==='ArrowLeft'?delta:event.key==='ArrowRight'?-delta:0),y:v.y+(event.key==='ArrowUp'?delta:event.key==='ArrowDown'?-delta:0)}))}}}>
+    <div ref={viewport} tabIndex={0} className="board-viewport" aria-label="Board canvas. Drag to pan, pinch to zoom, or use arrow keys." onPointerDownCapture={touchStart} onPointerMoveCapture={touchMove} onPointerUpCapture={touchEnd} onPointerCancelCapture={touchEnd} onClickCapture={event=>{if(event.timeStamp<suppressClickUntil.current){event.preventDefault();event.stopPropagation();}}} style={{backgroundPosition:`${view.x}px ${view.y}px`,backgroundSize:`${24*view.zoom}px ${24*view.zoom}px`}} onPointerDown={event=>{if(!(event.target as HTMLElement).closest('.board-card, .board-group-controls'))begin(event,'pan')}} onPointerMove={move} onPointerUp={event=>finish(event)} onPointerCancel={event=>finish(event,true)} onKeyDown={event=>{if(event.target!==event.currentTarget)return;const delta=event.shiftKey?100:40;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();setView(v=>({...v,x:v.x+(event.key==='ArrowLeft'?delta:event.key==='ArrowRight'?-delta:0),y:v.y+(event.key==='ArrowUp'?delta:event.key==='ArrowDown'?-delta:0)}))}}}>
       {!all.length&&<div className="board-empty"><span aria-hidden="true">📌</span><h2>No items pinned</h2><p>Create a board item or pin an existing entry.</p></div>}
       <div className="board-world" style={{transform:`translate(${view.x}px,${view.y}px) scale(${view.zoom})`}}>
         {groups.map(group=><div key={group.name} className={`board-group${group.state?.collapsed?' is-collapsed':''}`} style={{left:group.bounds.x,top:group.bounds.y,width:group.bounds.width,height:group.state?.collapsed?0:group.bounds.height}}>

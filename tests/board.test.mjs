@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {blankEntry,decodeEntries} from '../src/domain.ts';
-import {newBoardItem,screenToBoard,validateBoardFields,mergeItems,decodeBoardViews,effectiveCardKind,effectiveCardColor,zoomAtPoint,wheelZoomFactor} from '../src/board-model.ts';
+import {newBoardItem,screenToBoard,validateBoardFields,mergeItems,decodeBoardViews,effectiveCardKind,effectiveCardColor,zoomAtPoint,wheelZoomFactor,pinchBoardView} from '../src/board-model.ts';
 import {calendarWindow} from '../src/calendar-model.ts';
 import {entryTags} from '../src/board-tags.ts';
 import {mergeEntries} from '../src/sync.ts';
@@ -121,4 +121,25 @@ test('independent attachments merge and metadata rejects bytes and invalid layou
   assert.ok(validateBoardFields([],[{...file,dataUrl:'data:image/png;base64,YQ=='}]));
   assert.ok(validateBoardFields([],[{...file,size:2097153}]));
   assert.ok(validateBoardFields([{...newBoardItem('sticky'),x:Infinity}],[]));
+});
+
+
+test('touch pinch zoom follows the midpoint and supports simultaneous two-finger panning',()=>{
+  const initial={x:40,y:-30,zoom:1},start=[{x:100,y:100},{x:200,y:100}];
+  const before=screenToBoard({x:150,y:100},initial);
+  const zoomed=pinchBoardView(initial,start,[{x:50,y:100},{x:250,y:100}]);
+  assert.equal(zoomed.zoom,2);
+  assert.deepEqual(screenToBoard({x:150,y:100},zoomed),before);
+  const moved=pinchBoardView(initial,start,[{x:75,y:130},{x:275,y:130}]);
+  assert.deepEqual(screenToBoard({x:175,y:130},moved),before);
+  const pan=pinchBoardView(initial,start,[{x:120,y:140},{x:220,y:140}]);
+  assert.deepEqual(pan,{x:60,y:10,zoom:1});
+});
+test('touch pinch respects zoom limits without losing the midpoint anchor',()=>{
+  const initial={x:20,y:30,zoom:.5},start=[{x:100,y:100},{x:200,y:100}];
+  const before=screenToBoard({x:150,y:100},initial);
+  const tiny=pinchBoardView(initial,start,[{x:149,y:100},{x:151,y:100}]);
+  assert.equal(tiny.zoom,.25);assert.deepEqual(screenToBoard({x:150,y:100},tiny),before);
+  const huge=pinchBoardView(initial,start,[{x:-1000,y:100},{x:1300,y:100}]);
+  assert.equal(huge.zoom,2);assert.deepEqual(screenToBoard({x:150,y:100},huge),before);
 });
