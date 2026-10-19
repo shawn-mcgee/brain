@@ -34,6 +34,7 @@ import type { Connection } from './storage';
 import Attachments from './Attachments';
 import Checklist from './Checklist';
 import {setTaskDone} from './checklist-model';
+import {actualEntryChanges,sameValue} from './entry-changes';
 import Board from './Board';
 import type { BoardItem } from './board-model';
 import { mergeItems, decodeBoardViews } from './board-model';
@@ -49,6 +50,8 @@ import Curiosity from "./Curiosity";
 import AttributeInput from './AttributeInput';
 import Toast from './Toast';
 import PersonalitySurface from './PersonalitySurface';
+import ResponsiveSidebar from './ResponsiveSidebar';
+import SyncStatusButton from './SyncStatusButton';
 import {boardColors} from './board-model';
 import {entrySearchText,copyEntry,defaultSections,fancyName} from './entry-attributes';
 import { toggleDisclosure } from "./disclosure";
@@ -652,12 +655,16 @@ function App() {
     }
   }
   function change(entries: Entry[]) {
-    return commit({ ...stateRef.current, entries, dirty: true });
+    const current=stateRef.current;
+    entries=actualEntryChanges(current.entries,entries);
+    if(entries===current.entries)return true;
+    return commit({ ...current, entries, dirty: true });
   }
   function updateBoard(entryId: string, update: (items: BoardItem[]) => BoardItem[]) {
     change(stateRef.current.entries.map(entry => entry.id === entryId ? {...entry, boardItems: update(entry.boardItems), updatedAt: new Date().toISOString()} : entry));
   }
   function changeBoardViews(boardViews:BoardItem[]) {
+    if(sameValue(stateRef.current.boardViews,boardViews))return true;
     try { decodeBoardViews(boardViews); return commit({...stateRef.current,boardViews,dirty:true}); }
     catch(error) { setError(message(error)); return false; }
   }
@@ -807,7 +814,9 @@ function App() {
       [...current.filter((e) => e.id !== entry.id), entry],
       current,
     );
-    if (change(merged.entries)) {
+    const changes=actualEntryChanges(current,merged.entries);
+    if(changes===current){if(source==='popup')setEditor(null);setError('');return;}
+    if (change(changes)) {
       if (source === "inbox") setInboxEntry(blankEntry());
       else setEditor(null);
       setNotice(
@@ -984,6 +993,7 @@ function App() {
         className={`entry-row ${e.color?`item-colored board-${e.color}`:''} ${done ? "done" : ""} ${celebrations.some((c) => c.entryId === e.id && c.date === date) ? "celebrating" : ""}`}
         key={`${e.id}:${date || ""}`}
       >
+        <span className="entry-leading">
         {e.task ? (
           <button
             className={`task-check ${done ? "checked" : ""}`}
@@ -1006,6 +1016,7 @@ function App() {
                 : "📝"}
           </span>
         )}
+        </span>
         <div className="entry-main">
         <button
           className="entry-content"
@@ -1090,7 +1101,11 @@ function App() {
 
   return (
     <div className={`app-shell${view === "Board" && unlocked ? " board-workspace" : ""}`}>
-      <aside className="sidebar">
+      <ResponsiveSidebar mobileHeader={<>
+        <div className="mobile-header-context"><span className="mobile-current-tab">{view}</span><span aria-hidden="true">·</span><time className="mobile-today" dateTime={today} title={parseDate(today).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'})}>{parseDate(today).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</time></div>
+        <SyncStatusButton state={session?busy||syncing?'is-syncing':store.dirty?'is-pending':'is-connected':'is-offline'} status={session?busy||syncing?'Syncing…':store.dirty?syncFailures>0?'Sync failed. Retrying automatically.':'Waiting to sync':'Connected to Google':localMode?'Local workspace':'Not signed in'}/>
+        {session&&<button type="button" className={`mobile-sync-button${busy||syncing?' is-syncing':''}`} aria-label={busy||syncing?'Syncing':'Sync now'} title={busy||syncing?'Syncing':'Sync now'} disabled={busy||syncing} onClick={()=>sync()}><span aria-hidden="true">{'\u{1F504}'}</span></button>}
+      </>}>
         <a className="brand" href="#" onClick={() => setView("Inbox")}>
           Brain
         </a>
@@ -1143,7 +1158,7 @@ function App() {
                 Sign out
               </button>)}
         </div>
-      </aside>
+      </ResponsiveSidebar>
       <main>
         <header className="topbar">
           <div className="today-context">
