@@ -42,7 +42,7 @@ test('copying creates an unsaved independent draft with shared values and no boa
   assert.notEqual(copy.id,entry.id);assert.equal(copy.name,'Copy of Original');assert.equal(copy.note,'Body');assert.equal(copy.where,'Home');assert.deepEqual(copy.boardItems,[]);
   copy.who.push('Alex');assert.deepEqual(entry.who,['Sam']);
   assert.deepEqual(defaultSections('Budget'),['money']);assert.deepEqual(defaultSections('Todo'),['note','task','ends']);assert.deepEqual(defaultSections('Calendar'),['note','begins','where']);
-  const names=new Set();for(let a=0;a<20;a++)for(let b=0;b<20;b++){let call=0;names.add(fancyName(()=>((call++?b:a)+.1)/20))}assert.equal(names.size,400);
+  const names=new Set();for(let a=0;a<80;a++)for(let b=0;b<80;b++){let call=0;names.add(fancyName(()=>((call++?b:a)+.1)/80))}assert.equal(names.size,6400);
 });
 test('calendar resizing preserves its aspect ratio within stored layout bounds',()=>{
   const calendar=newBoardItem('calendar');assert.ok(calendar.width>=800);

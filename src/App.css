@@ -1721,3 +1721,20 @@ details[open] > summary .attribute-awake { display:inline-block; }
 .board-card.is-pinned .board-move, .board-group-controls[data-pinned=true] .board-group-drag { opacity:.3; cursor:default; }
 .board-card-header:focus-visible, .board-group-controls:focus-visible { outline:2px solid #315fc3; outline-offset:2px; }
 .board-card-header input { user-select:text; cursor:text; }
+.attribute-autocomplete { position:relative; min-width:0; background:white; border-radius:5px; }
+.attribute-autocomplete input { position:relative; background:transparent; }
+.attribute-ghost { position:absolute; inset:0; padding:8px 11px; overflow:hidden; white-space:pre; pointer-events:none; color:#68786f; }
+.attribute-ghost > span { display:block; }
+.attribute-ghost-prefix { color:transparent; }
+.attribute-suggestion-accessible { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.image-preview-trigger { display:flex; align-items:center; justify-content:center; width:100%; height:100%; min-height:0; padding:0; border:0; border-radius:0; background:transparent; cursor:zoom-in; }
+.image-preview[open] { display:flex; flex-direction:column; width:min(760px,calc(100vw - 24px)); height:min(580px,85dvh); overflow:hidden; }
+.image-preview-header { display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid #d8dfda; }
+.image-preview-header strong { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.image-preview-header button,.image-preview-controls button { border:1px solid #b3bfb7; border-radius:6px; background:#f1f4f1; min-width:40px; min-height:40px; padding:4px 10px; }
+.image-preview-header button:hover,.image-preview-controls button:hover { background:#e1e8e2; }
+.image-preview-viewport { position:relative; flex:1; min-height:0; overflow:hidden; background:#e7ebe7; touch-action:none; cursor:grab; }
+.image-preview-viewport:active { cursor:grabbing; }
+.image-preview-viewport img { position:absolute; left:0; top:0; max-width:none; max-height:none; transform-origin:0 0; user-select:none; pointer-events:none; }
+.image-preview-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; padding:8px; border-top:1px solid #d8dfda; }
+.image-preview-controls output { min-width:58px; text-align:center; font-variant-numeric:tabular-nums; }

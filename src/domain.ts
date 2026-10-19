@@ -330,7 +330,7 @@ export function sortTasks(entries: Entry[], today: string): Entry[] {
 export function validateEntry(e: Entry, entries: Entry[]): string {
   const boardError = validateBoardFields(e.boardItems || [], e.attachments || []);
   if (boardError) return boardError;
-  if (!e.name.trim()) return "Give this entry a name.";
+  if (!e.name.trim()) return "Give this item a name.";
   if (e.name.length > 10000) return "Keep names under 10,000 characters.";
   if(typeof e.where!=='string'||e.where.length>10000||typeof e.group!=='string'||e.group.length>10000||typeof e.color!=='string'||e.color!==''&&!boardColors.includes(e.color as typeof boardColors[number])||!Array.isArray(e.tags)||e.tags.length>200||e.tags.some(tag=>typeof tag!=='string'||tag.length>500))return 'Invalid location, color, tags, or group.';
   if (e.note.length > 10000) return "Keep notes under 10,000 characters.";
@@ -356,13 +356,13 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
   )
     return "The end must come after the beginning.";
   if (e.repeat && !e.beginsOn && !e.endsOn)
-    return "Repeating entries need a beginning or ending date.";
+    return "Repeating items need a beginning or ending date.";
   if (e.repeat && !intervals.includes(e.repeat))
     return "Choose a valid repeat interval.";
   if (!Number.isFinite(e.amount) || e.amount < 0)
     return "Enter a positive amount or zero.";
   if (e.budgetType && e.transactionType)
-    return "Use separate entries for a budget plan and an actual transaction.";
+    return "Use separate items for a budget plan and an actual transaction.";
   if (
     e.budgetId &&
     !entries.some(
@@ -381,14 +381,14 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
     return !!entries.find((x) => x.id === id)?.requires.some(cycle);
   }
   if (e.requires.some((id) => !entries.some((x) => x.id === id)))
-    return "A required entry no longer exists.";
+    return "A required item no longer exists.";
   if (e.requires.some(cycle))
     return "Requirements cannot create a dependency cycle.";
   return "";
 }
 export function decodeEntries(value: unknown): Entry[] {
   if (!Array.isArray(value) || value.length > 10000)
-    throw new Error("Expected an array of up to 10,000 entries.");
+    throw new Error("Expected an array of up to 10,000 items.");
   const normalized = value.map(raw => {
     if(!raw || typeof raw!=='object')return raw;
     const legacy=raw.name===undefined && typeof raw.note==='string';
@@ -427,7 +427,7 @@ export function decodeEntries(value: unknown): Entry[] {
       !raw.id ||
       ids.has(raw.id)
     )
-      throw new Error("This file contains invalid or duplicate entries.");
+      throw new Error("This file contains invalid or duplicate items.");
     if (
       !["", "income", "expense"].includes(raw.budgetType) ||
       !["", "income", "expense"].includes(raw.transactionType)

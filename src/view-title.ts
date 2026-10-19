@@ -1,7 +1,7 @@
 import {daysBetween,parseDate,periodRange,periodKind} from './domain.ts';
 import type {Period} from './domain.ts';
 export function viewTitle(period:Period|'All',anchor:string,today:string):string {
-  if(period==='All')return 'All entries';
+  if(period==='All')return 'All items';
   const kind=periodKind(period),range=periodRange(kind,anchor),now=periodRange(kind,today);
   const day=(date:string)=>parseDate(date).toLocaleDateString('en-US',{month:'long',day:'numeric',...(date.slice(0,4)!==today.slice(0,4)?{year:'numeric' as const}:{})});
   const suffix=(n:number,unit:string)=>` (${Math.abs(n)} ${unit}${Math.abs(n)===1?'':'s'} ${n<0?'Ago':'From Now'})`;

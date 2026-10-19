@@ -19,7 +19,7 @@ export function validateBoardFields(boardItems: unknown, attachments: unknown): 
     if (!file || typeof file.id!=='string' || !/^[\w-]{1,100}$/.test(file.id) || ids.has(file.id) || typeof file.name!=='string' || !file.name || file.name.length>500 || typeof file.type!=='string' || !/^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/.test(file.type) || !Number.isInteger(file.size) || file.size<0 || file.size>MAX_FILE_SIZE || typeof file.createdAt!=='string' || !Number.isFinite(Date.parse(file.createdAt)) || 'dataUrl' in file || 'data' in file) return 'Invalid attachment metadata.';
     ids.add(file.id);
   }
-  if(JSON.stringify(boardItems).length>40000 || JSON.stringify(attachments).length>40000) return 'Entry metadata is too large.';
+  if(JSON.stringify(boardItems).length>40000 || JSON.stringify(attachments).length>40000) return 'Thought metadata is too large.';
   return '';
 }
 // Merge item IDs individually so two people can pin/move different cards or add

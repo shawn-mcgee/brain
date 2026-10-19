@@ -3,12 +3,15 @@ import type { Attachment } from './board-model';
 import { isPreviewImage } from './board-model';
 import type { Connection } from './storage';
 import { downloadFile, getFile, stageFile } from './files';
-export function AttachmentImage({file,entryId,connection,token}:{file:Attachment;entryId:string;connection:Connection;token?:string}) {
+import ImagePreview from './ImagePreview';
+export function AttachmentImage({file,entryId,connection,token,interactive=false}:{file:Attachment;entryId:string;connection:Connection;token?:string;interactive?:boolean}) {
+  const [previewOpen,setPreviewOpen]=useState(false);
   const ref=useRef<HTMLDivElement>(null);
   const [visible,setVisible]=useState(()=>!('IntersectionObserver' in window)),[source,setSource]=useState(''),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useEffect(()=>{if(!ref.current)return;if(!('IntersectionObserver' in window))return;const observer=new IntersectionObserver(items=>{if(items.some(i=>i.isIntersecting)){setVisible(true);observer.disconnect();}},{rootMargin:'150px'});observer.observe(ref.current);return()=>observer.disconnect();},[]);
   useEffect(()=>{if(!visible)return;let active=true;getFile(file,entryId,connection,token).then(url=>{if(active)setSource(url)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[visible,file,entryId,connection,token,retry]);
-  return <div className="attachment-image" ref={ref}>{source?<img draggable={false} src={source} alt={file.name} onError={()=>{setSource('');setError('This image could not be displayed.')}}/>:error?<div><p role="alert">{error}</p><button type="button" className="secondary" onClick={()=>{setError('');setRetry(n=>n+1)}}>Retry image</button></div>:<span>{visible?'Loading image…':'Image'}</span>}</div>;
+  const picture=<img draggable={false} src={source} alt={file.name} onError={()=>{setSource('');setError('This image could not be displayed.')}}/>;
+  return <div className="attachment-image" ref={ref}>{source?interactive?<button type="button" className="image-preview-trigger" aria-label={`Preview ${file.name}`} onClick={()=>setPreviewOpen(true)}>{picture}</button>:picture:error?<div><p role="alert">{error}</p><button type="button" className="secondary" onClick={()=>{setError('');setRetry(n=>n+1)}}>Retry image</button></div>:<span>{visible?'Loading image…':'Image'}</span>}{source&&previewOpen&&<ImagePreview source={source} name={file.name} onClose={()=>setPreviewOpen(false)}/>}</div>;
 }
 export default function Attachments({value,entryId,connection,token,onChange,onBusyChange}:{value:Attachment[];entryId:string;connection:Connection;token?:string;onChange:(files:Attachment[])=>void;onBusyChange:(busy:boolean)=>void}) {
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[preview,setPreview]=useState<string|null>(null);
@@ -16,7 +19,7 @@ export default function Attachments({value,entryId,connection,token,onChange,onB
   const input=useRef<HTMLInputElement>(null),dragDepth=useRef(0),adding=useRef(false);
   async function add(files:FileList|null){
     if(adding.current||!files?.length)return;
-    if(value.length+files.length>20){setError('An entry can have up to 20 files.');return;}
+    if(value.length+files.length>20){setError('An item can have up to 20 files.');return;}
     adding.current=true;
     setBusy(true);onBusyChange(true);setError('');
     let next=[...value];

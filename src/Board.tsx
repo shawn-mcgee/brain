@@ -63,7 +63,7 @@ export default function Board({entries,boardViews,onViewsChange,connection,token
     const point=center(kind),item=newBoardItem(kind,point.x,point.y,maxZ);
     setError('');
     if(kind==='calendar'&&!existing){if(boardViews.length>=100){setError('The board can have up to 100 calendar views. Remove an existing view first.');return;}onViewsChange([...boardViews,item]);}
-    else if(existing){if(existing.boardItems.length>=100){setError('This entry already has 100 board items.');return;}onPin(existing,item);}
+    else if(existing){if(existing.boardItems.length>=100){setError('This item already has 100 board items.');return;}onPin(existing,item);}
     else {const entry={...blankEntry(),name:kind==='polaroid'?'Photo':'New note',boardItems:[item]};onCreate(entry);}
     setPanel(null);
   }
@@ -105,7 +105,7 @@ export default function Board({entries,boardViews,onViewsChange,connection,token
         <button type="button" className="secondary" onClick={()=>add('sticky')}>{'\u{1F4DD}'} Add card</button>
         <button type="button" className="secondary" onClick={()=>add('polaroid')}>{'\u{1F4F7}'} Add polaroid</button>
         <button type="button" className="secondary" onClick={()=>add('calendar')}>{'\u{1F4C5}'} Add calendar</button>
-        <details className="board-existing-picker"><summary>Pin existing entry</summary><input aria-label="Find entry to pin" placeholder="Search entries" value={search} onChange={event=>setSearch(event.target.value)}/><div>{entries.filter(entry=>`${entry.name} ${entry.name}`.toLowerCase().includes(search.toLowerCase())).slice(0,50).map(entry=><button key={entry.id} type="button" onClick={()=>{add('sticky',entry);addButton.current?.focus();}}>{entry.name}</button>)}{!entries.length&&<p>No entries yet.</p>}</div></details>
+        <details className="board-existing-picker"><summary>Pin existing item</summary><input aria-label="Find item to pin" placeholder="Search items" value={search} onChange={event=>setSearch(event.target.value)}/><div>{entries.filter(entry=>`${entry.name} ${entry.name}`.toLowerCase().includes(search.toLowerCase())).slice(0,50).map(entry=><button key={entry.id} type="button" onClick={()=>{add('sticky',entry);addButton.current?.focus();}}>{entry.name}</button>)}{!entries.length&&<p>No items yet.</p>}</div></details>
 
       </div>}
     </div>

@@ -62,9 +62,9 @@ import {
 import type { EntrySection as Section } from "./entry-sections";
 import "./App.css";
 
-type View = "Inbox" | "Todo" | "Calendar" | "Budget" | "Board" | "Archive";
+type View = "Inbox" | "Todo" | "Calendar" | "Budget" | "Board" | "Inventory";
 const icons: Record<string, string> = {
-  Archive: "\u{1F4E6}",
+  Inventory: "\u{1F5C3}\uFE0F",
   Board: "📌",
   Inbox: "📥",
   Todo: "✅",
@@ -217,7 +217,7 @@ function Editor({
       sections.includes("money") &&
       !cleaned.budgetType &&
       !cleaned.transactionType
-        ? "Choose an entry type for Money, or remove the Money section."
+        ? "Choose an item type for Money, or remove the Money section."
         : validateEntry(cleaned, entries);
     if (issue) {
       setError(issue);
@@ -245,7 +245,7 @@ function Editor({
     where: <AttributeInput label="Where" value={draft.where} options={[...new Set(entries.map(e=>e.where).filter(Boolean))].sort()} onChange={where=>update({where})}/>,
     group: <AttributeInput label="Group" value={draft.group} options={[...new Set(entries.map(e=>e.group).filter(Boolean))].sort()} onChange={group=>update({group})}/>,
     tags: <AttributeInput label="Tags" multiple value={draft.tags} options={[...new Set(entries.flatMap(e=>e.tags))].sort()} onChange={value=>update({tags:[...new Set(value.split(',').map(v=>v.trim()).filter(Boolean))]})}/>,
-    color: <select aria-label="Entry color" value={draft.color} onChange={event=>update({color:event.target.value})}><option value="">Automatic</option>{boardColors.map(color=><option key={color}>{color}</option>)}</select>,
+    color: <select aria-label="Thought color" value={draft.color} onChange={event=>update({color:event.target.value})}><option value="">Automatic</option>{boardColors.map(color=><option key={color}>{color}</option>)}</select>,
     task: null,
     begins: (
       <>
@@ -328,7 +328,7 @@ function Editor({
     requires: (
       <>
         <p className="hint">
-          Required tasks must be done first. Other entries act as reference
+          Required tasks must be done first. Other items act as reference
           information.
         </p>
         {entries.filter((e) => e.id !== draft.id).length ? (
@@ -353,7 +353,7 @@ function Editor({
               ))}
           </div>
         ) : (
-          <p className="muted">Add another entry to link a requirement.</p>
+          <p className="muted">Add another item to link a requirement.</p>
         )}
       </>
     ),
@@ -429,7 +429,7 @@ function Editor({
   const form = (
     <form id={formId} onSubmit={submit} onInvalidCapture={event=>{const details=(event.target as HTMLElement).closest('details');if(details)details.open=true;}} className="editor">
       <div className="editor-fields">
-      <label className="entry-name">Name<small className="attribute-description">A name for this entry. Names can be shared by different entries.</small><input autoFocus required maxLength={10000} value={draft.name} placeholder={namePlaceholder} onChange={event=>update({name:event.target.value})}/></label>
+      <label className="entry-name">Name<small className="attribute-description">A name for this item. Names can be shared by different items.</small><input autoFocus required maxLength={10000} value={draft.name} placeholder={namePlaceholder} onChange={event=>update({name:event.target.value})}/></label>
       {sections.map((section) => (
         <div className="entry-section" key={section}>
           <details
@@ -510,13 +510,13 @@ function Editor({
     </form>
   );
   return embedded ? (
-    <section className="inbox-form" aria-label="New entry">
+    <section className="inbox-form" aria-label="New item">
       {form}
     </section>
   ) : (
     <Modal
       title={
-        entries.some((e) => e.id === entry.id) ? "Edit entry" : "New entry"
+        entries.some((e) => e.id === entry.id) ? "Edit item" : "New item"
       }
       close={close}
       entryModal
@@ -707,7 +707,7 @@ function App() {
       setSyncFailures(0);
       if (merged.conflicts)
         setNotice(
-          "Concurrent versions were preserved as separate entries during automatic merge.",
+          "Concurrent versions were preserved as separate items during automatic merge.",
         );
     } catch (e) {
       setError(
@@ -774,7 +774,7 @@ function App() {
         setError("");
         if (data.conflicts + rebased.conflicts)
           setNotice(
-            "Changes merged automatically. Concurrent versions were preserved as separate entries; dependency cycles were removed if needed.",
+            "Changes merged automatically. Concurrent versions were preserved as separate items; dependency cycles were removed if needed.",
           );
         else if (!automatic) setNotice("Everything is up to date.");
         else if (current.dirty)
@@ -809,10 +809,10 @@ function App() {
       else setEditor(null);
       setNotice(
         merged.conflicts
-          ? "Concurrent versions were preserved as separate entries."
+          ? "Concurrent versions were preserved as separate items."
           : session
-            ? "Entry saved. Syncing automatically…"
-            : "Entry saved on this device.",
+            ? "Thought saved. Syncing automatically…"
+            : "Thought saved on this device.",
       );
       setError("");
     }
@@ -820,7 +820,7 @@ function App() {
   function remove(entry: Entry) {
     if (
       !confirm(
-        `Delete “${entry.name.slice(0, 80)}”? Links to this entry will also be removed.`,
+        `Delete “${entry.name.slice(0, 80)}”? Links to this item will also be removed.`,
       )
     )
       return;
@@ -896,7 +896,7 @@ function App() {
         incoming = decodeEntries(Array.isArray(data) ? data : data.entries);
       if (
         !confirm(
-          `Merge ${incoming.length} entries into this device? Imported entries replace existing entries with the same ID. Sync will upload the result.`,
+          `Merge ${incoming.length} items into this device? Imported items replace existing items with the same ID. Sync will upload the result.`,
         )
       )
         return;
@@ -1098,7 +1098,7 @@ function App() {
           Brain
         </a>
         <nav aria-label="Main navigation">
-          {(["Inbox", "Todo", "Calendar", "Budget", "Board", "Archive"] as const).map((v) => (
+          {(["Inbox", "Todo", "Calendar", "Budget", "Board", "Inventory"] as const).map((v) => (
             <button
               key={v}
               className={view === v ? "active" : ""}
@@ -1194,7 +1194,7 @@ function App() {
             <section className="welcome">
               <SignInCharacter />
               <h1>Sign in</h1>
-              <p>Use your Google account to access shared entries.</p>
+              <p>Use your Google account to access shared items.</p>
               <button
                 className="google-button"
                 onClick={signIn}
@@ -1247,8 +1247,8 @@ function App() {
                     <button
                       className="floating-add-entry"
                       type="button"
-                      aria-label="Add entry"
-                      title="Add entry"
+                      aria-label="Add item"
+                      title="Add item"
                       disabled={busy}
                       onClick={() =>
                         setEditor({
@@ -1268,7 +1268,7 @@ function App() {
               {localMode && (
                 <div className="local-banner">
                   <span>
-                    ◉ Local workspace · Your entries stay in this browser until
+                    ◉ Local workspace · Your items stay in this browser until
                     you connect.
                   </span>
                   <button onClick={signIn} disabled={busy}>
@@ -1298,22 +1298,22 @@ function App() {
                           ? "Tasks & coming up"
                           : view === "Calendar"
                             ? calendarPeriod === "All"
-                              ? "All dated entries"
+                              ? "All dated items"
                               : parseDate(
                                   calendarRange.from,
                                 ).toLocaleDateString(undefined, {
                                   month: "long",
                                   year: "numeric",
                                 })
-                            : view === "Archive" ? "All entries" : "All-time overview"}
+                            : view === "Inventory" ? "All items" : "All-time overview"}
                       </h2>
                     </div>
                     <div className="filters">
                       <label className="search">
                         <span aria-hidden="true">🔎</span>
                         <input
-                          aria-label="Search entries"
-                          placeholder="Find an entry…"
+                          aria-label="Search items"
+                          placeholder="Find an item…"
                           value={search}
                           onChange={(e) => setSearch(e.target.value)}
                         />
@@ -1364,7 +1364,7 @@ function App() {
                           ),
                         )
                       : todoItems.length ? null : empty(
-                          "No matching entries",
+                          "No matching items",
                           "No tasks or upcoming dates match this view.",
                         )}
                   </section>
@@ -1377,7 +1377,7 @@ function App() {
                   {calendarPeriod === "All" ? (
                     <>
                       <p className="hint calendar-all-hint">
-                        All dated entries. Repeating entries are listed once
+                        All dated items. Repeating items are listed once
                         using their original dates.
                       </p>
                       <section className="entry-list">
@@ -1386,7 +1386,7 @@ function App() {
                             row(e, e.beginsOn || e.endsOn),
                           )
                         ) : (
-                          <div className="quiet-empty">No dated entries.</div>
+                          <div className="quiet-empty">No dated items.</div>
                         )}
                       </section>
                     </>
@@ -1420,7 +1420,7 @@ function App() {
                               return (
                                 <button
                                   key={day}
-                                  aria-label={`${day}, ${items.length} entries`}
+                                  aria-label={`${day}, ${items.length} items`}
                                   aria-pressed={day === selectedDay}
                                   className={`calendar-day ${day < calendarRange.from || day > calendarRange.to ? "outside" : ""} ${day === selectedDay ? "selected" : ""}`}
                                   onClick={() => setSelectedDay(day)}
@@ -1562,7 +1562,7 @@ function App() {
                                 )
                             ) : (
                               <div className="quiet-empty">
-                                No entries for this date.
+                                No items for this date.
                               </div>
                             )}
                           </section>
@@ -1573,7 +1573,7 @@ function App() {
                   {filtered.some(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn)&&<section aria-label="Tasks for any time"><h3>Any time</h3><div className="entry-list">{filtered.filter(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn).map(entry=>row(entry))}</div></section>}
                 </>
               )}
-              {view === "Archive"&&<section className="entry-list" aria-label="All entries">{filtered.length?filtered.map(entry=>row(entry)):empty('No matching entries','Search the entry archive or add an entry.')}</section>}
+              {view === "Inventory"&&<section className="entry-list" aria-label="All items">{filtered.length?filtered.map(entry=>row(entry)):empty('No matching items','Search your items or add an item.')}</section>}
               {view === "Budget" && (
                 <>
                   <div className="money-summary">
@@ -1729,7 +1729,7 @@ function App() {
                   changed &&
                   store.dirty &&
                   !confirm(
-                    "Changing the backend will reset the shared revision. Export unsynced local entries before continuing. Continue?",
+                    "Changing the backend will reset the shared revision. Export unsynced local items before continuing. Continue?",
                   )
                 )
                   return;
@@ -1761,7 +1761,7 @@ function App() {
                   if (
                     !store.dirty ||
                     confirm(
-                      "Replace local entries with the Sheet version? Export a backup first if you want to keep local changes.",
+                      "Replace local items with the Sheet version? Export a backup first if you want to keep local changes.",
                     )
                   ) {
                     void sync(true);
