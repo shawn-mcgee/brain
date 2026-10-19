@@ -135,7 +135,20 @@ export function todoOccurrences(
   const candidates = entries
     .flatMap((e) => {
       if (range) return occurrences(e, range.from, range.to);
-      if (e.task) return [nextTask(e, today)];
+      if (e.task) {
+        const next = nextTask(e, today);
+        if (!showDone || !e.repeat) return [next];
+        const duration =
+          e.beginsOn && e.endsOn ? daysBetween(e.beginsOn, e.endsOn) : 0;
+        const completed = [...new Set(e.completedDates)].map((date) => ({
+          entry: e,
+          date,
+          start: date,
+          end: addDays(date, duration),
+          key: `${e.id}:${date}`,
+        }));
+        return [...completed, next];
+      }
       const next = nextScheduled(e, today);
       return next ? [next] : [];
     })

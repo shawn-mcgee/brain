@@ -57,7 +57,7 @@ This attribute indicates that an entry is a tracked expense item (an actual tran
 
 #### Inbox
 
-The inbox is a single entry point for new data. The inbox has a gui that lets you compose an entry from various attributes. Once you are done, you can save the entry to the database.
+The Inbox tab embeds a simple entry form directly in the page. Note is immediately visible. Buttons at the bottom add **Task**, **Who**, **Begins**, **Ends/Due**, **Repeats**, **Requires**, or **Money** as expandable sections, appended in the order selected. Repeats is available only while Begins or Ends/Due is attached; saving a repeating entry still requires an actual date. Removing the final time section also removes Repeats and clears its repetition/completion history. Each section can be collapsed without clearing its values. **Remove** clears the section's form values and returns its button to the bottom, even when the section is collapsed. Existing sections are shown when editing an entry; removals affect the saved entry only after saving. Saving creates an entry and resets the form; Clear resets it without saving. Drafts remain when switching tabs. The other views use the same form in a popup through **Add entry**.
 
 #### Todo
 
@@ -120,6 +120,10 @@ The frontend uses the [Google Identity Services token model](https://developers.
 
 After backend code changes, update the deployment to a **new version**, keeping its existing URL. `Entries` is created automatically on the first authorized request. The script stores one structured entry per row, with JSON-encoded cells to preserve types and prevent formula execution. Treat this sheet as app-managed storage; direct edits bypass revision tracking and may produce invalid data. Use the app's editor and JSON import/export instead.
 
+If sign-in reports **Another sync is in progress**, update `Code.gs` and choose **Deploy → Manage deployments → Edit → New version → Deploy**. The backend now returns a retryable `BUSY` response after a short lock wait, and the frontend retries that response automatically (including the older text-only error). Small committed snapshots are cached by spreadsheet and revision for two minutes, so authenticated readers usually do not wait for a writer; cache failures fall back to a locked Sheet read. Whitelist checks still run before accessing the cache. Persistently busy requests can indicate a long-running execution; inspect the Apps Script **Executions** page.
+
+The sign-in button distinguishes **Waiting for Google** from **Connecting to Sheet** and offers **Cancel sign-in**. Missing Google callbacks time out after 90 seconds; Sheet requests time out after 30 seconds each, with a 60-second overall limit across busy retries. Network failures and authentication errors are not blindly retried as writes. Empty cached connection fields fall back to the configured build values, without clearing local entries.
+
 See Google's [web app deployment documentation](https://developers.google.com/apps-script/guides/web) and [Content Service redirect behavior](https://developers.google.com/apps-script/reference/content/content-service). Requests use a plain-text JSON POST to avoid a CORS preflight, then follow Google's JSON response redirect. Live cross-origin sync must be verified against your actual deployment; incorrect deployment permissions commonly return a Google sign-in page instead of JSON.
 
 ### Publish on GitHub Pages
@@ -145,11 +149,15 @@ See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pa
 - Todo includes tasks plus upcoming or ongoing entries with a start or end date. Dated entries receive highlights such as **Starts today**, **Ends today**, **In progress**, and **Coming up**. **everything** includes undated and overdue tasks, plus the next upcoming occurrence of each dated non-task entry.
 - Todo and Calendar use an inline **View** filter. Select **everything**, **this**, **last**, or **next**. Choosing this/last/next expands a second dropdown for **day**, **week**, or **month**, defaulting to week. Selecting day collapses the filter to **today**, **yesterday**, or **tomorrow**; the single dropdown also lets you return to this/last/next or everything. Changing this/last/next while viewing a month keeps the month unit. Date filters include entries that overlap the period, including ongoing entries. Weeks run Sunday through Saturday, using local calendar dates. Undated tasks appear only under Todo's **everything** filter; overdue tasks appear in a date filter when their dates overlap it. Calendar's **everything** view lists all dated entries once using their original dates, including repeating entries.
 - Calendar offers a day agenda, a seven-day grid with a daily agenda for the whole week, and the month grid with a selected-day agenda. Previous/next buttons move by the selected period; **Back to now** returns to the current period. Choosing a period tab also returns to the current day/week/month.
-- A recurring task tracks completion separately for each occurrence. Todo's **everything** shows its earliest unfinished occurrence, including overdue occurrences. Date filters show each occurrence within the selected period. **Show completed** reveals completed occurrences in date filters; they can also be reopened from Calendar.
+- A recurring task tracks completion separately for each occurrence. Todo's **everything** normally shows its earliest unfinished occurrence, including overdue occurrences. Enabling **Show completed** also displays its previously checked occurrences so they can be unchecked directly, without changing the date filter or editing the schedule. Date filters show each occurrence within the selected period and reveal checked occurrences when **Show completed** is enabled. They can also be reopened from Calendar.
 - Required tasks must be complete before their dependent task can be completed. Non-task requirements are references. A repeating prerequisite is checked at its latest occurrence on or before the dependent occurrence's date.
 - Budget shows all-time USD totals, counting each stored item once. Plans and actual transactions are separate entries; actual transactions may link to matching plans. Recurrence displays dates in Calendar and does not automatically create or count transactions.
 
 ### Verification
+
+The interface uses system sans-serif text at an 18px default, supporting text at approximately 16px, high-contrast colors, and controls with at least 44px-high interactive targets. Spacing is compact, navigation labels stay visible on small screens, and forms stack rather than shrinking their text. Calendar grids scroll horizontally on narrow screens; the full day/week agenda remains below the grid. Browser text-size preferences and zoom remain supported.
+
+Successful task completion triggers a brief checkmark and randomized particles matched to the task text or financial attributes. Reopening tasks, blocked completions, and failed local saves do not celebrate. Hovering or focusing Delete adds a small tremble and sweat effect without moving the button. The sign-in page includes a waving brain emoji. Navigation and decorative icons use emoji alongside readable labels where applicable. All decorative effects are hidden from assistive technology, completion is announced separately, and animated effects are disabled by `prefers-reduced-motion`.
 
 ```sh
 npm test
@@ -158,11 +166,3 @@ npm run preview
 ```
 
 Tests cover recurrence and leap-year clamping, overlapping calendar spans, dependency cycles and ordering, per-occurrence task completion, data validation, backend whitelist enforcement, stale-write protection, and safe Sheet serialization. Backend tests use local Apps Script mocks; live Google consent, deployed GAS permissions, and cross-origin redirects need the setup smoke test above.
-
-#### Rules
-
-The rules view allows you to view, copy, and modify existing entries.
-
-#### Board
-
-The board view is a virtual infinite cork board that can be used to visualize entries.

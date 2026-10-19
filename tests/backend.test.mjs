@@ -8,6 +8,10 @@ const source = fs.readFileSync(
   "utf8",
 );
 function backend() {
+  const cache = new Map(),
+    lockWaits = [];
+  let externalBusy = false,
+    releases = 0;
   const properties = new Map([
     ["SPREADSHEET_ID", "test-sheet"],
     ["ALLOWED_EMAILS", "one@gmail.com, TWO@gmail.com"],
@@ -69,10 +73,26 @@ function backend() {
       },
     },
     LockService: {
-      getScriptLock: () => ({
-        tryLock: () => true,
-        hasLock: () => true,
-        releaseLock: () => {},
+      getScriptLock: () => {
+        let acquired = false;
+        return {
+          tryLock: (ms) => {
+            lockWaits.push(ms);
+            acquired = !externalBusy;
+            return acquired;
+          },
+          hasLock: () => acquired,
+          releaseLock: () => {
+            acquired = false;
+            releases++;
+          },
+        };
+      },
+    },
+    CacheService: {
+      getScriptCache: () => ({
+        get: (key) => cache.get(key) || null,
+        put: (key, value) => cache.set(key, value),
       }),
     },
     SpreadsheetApp: {
@@ -95,8 +115,42 @@ function backend() {
     JSON.parse(
       context.doPost({ postData: { contents: JSON.stringify(body) } }),
     );
-  return { call, cells, reads: () => reads };
+  return {
+    call,
+    cells,
+    reads: () => reads,
+    setBusy: (busy) => {
+      externalBusy = busy;
+    },
+    lockWaits,
+    releases: () => releases,
+  };
 }
+test("busy cold reads return a retryable code quickly without touching the Sheet", () => {
+  const api = backend();
+  api.setBusy(true);
+  const result = api.call({ action: "read", token: "one" });
+  assert.equal(result.code, "BUSY");
+  assert.equal(api.reads(), 0);
+  assert.deepEqual(api.lockWaits, [1000]);
+  assert.equal(api.releases(), 0);
+  api.setBusy(false);
+  assert.equal(api.call({ action: "read", token: "one" }).ok, true);
+  assert.equal(api.releases(), 1);
+});
+test("authorized readers use committed cached snapshots while a writer holds the lock", () => {
+  const api = backend(),
+    e = { ...blankEntry(), note: "Shared" };
+  api.call({ action: "write", token: "one", revision: 0, entries: [e] });
+  const reads = api.reads();
+  api.setBusy(true);
+  const result = api.call({ action: "read", token: "two" });
+  assert.deepEqual(result.entries, [e]);
+  assert.equal(result.revision, 1);
+  assert.equal(result.user.email, "two@gmail.com");
+  assert.equal(api.reads(), reads);
+  assert.equal(api.call({ action: "read", token: "outsider" }).ok, false);
+});
 test("GAS fails closed before reading the Sheet for missing, invalid, unverified and non-whitelisted credentials", () => {
   const api = backend();
   for (const token of ["", "fake", "outsider", "unverified"])

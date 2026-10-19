@@ -8,9 +8,16 @@ function doPost(event) {
     const properties = PropertiesService.getScriptProperties();
     const user = authorize_(body.token, properties);
     if (!['read', 'write'].includes(body.action)) throw new Error('Unknown action.');
+    const spreadsheetId = required_(properties, 'SPREADSHEET_ID');
+    // Readers can use a previously committed snapshot without waiting for a writer.
+    // Authenticate first; the shared cache contains no per-user credentials.
+    if (body.action === 'read') {
+      const cached = cachedSnapshot_(spreadsheetId, Number(properties.getProperty('REVISION') || 0));
+      if (cached) return json_({ ok: true, entries: cached.entries, revision: cached.revision, user: user });
+    } else validateEntries_(body.entries);
     lock = LockService.getScriptLock();
-    if (!lock.tryLock(20000)) throw new Error('Another sync is in progress. Try again.');
-    const book = SpreadsheetApp.openById(required_(properties, 'SPREADSHEET_ID'));
+    if (!lock.tryLock(1000)) return json_({ ok: false, code: 'BUSY', error: 'Another sync is in progress. Try again.' });
+    const book = SpreadsheetApp.openById(spreadsheetId);
     let sheet = book.getSheetByName('Entries');
     if (!sheet) {
       sheet = book.insertSheet('Entries');
@@ -20,9 +27,10 @@ function doPost(event) {
     const headers = sheet.getRange(1, 1, 1, COLUMNS.length).getValues()[0];
     if (JSON.stringify(headers) !== JSON.stringify(COLUMNS)) throw new Error('Entries sheet headers have changed. Restore the original headers before syncing.');
     let revision = Number(properties.getProperty('REVISION') || 0);
+    const previousLastRow = sheet.getLastRow();
+    let entries;
     if (body.action === 'write') {
       if (body.revision !== revision) return json_({ ok: false, code: 'CONFLICT', error: 'The Sheet changed in another browser. Pull and merge before retrying.' });
-      validateEntries_(body.entries);
       const rows = body.entries.map(entry => COLUMNS.map(column => JSON.stringify(entry[column])));
       // Write the new snapshot before clearing trailing rows. JSON encoding prevents
       // user text from being interpreted as spreadsheet formulas or dates.
@@ -30,20 +38,38 @@ function doPost(event) {
         if (sheet.getMaxRows() < rows.length + 1) sheet.insertRowsAfter(sheet.getMaxRows(), rows.length + 1 - sheet.getMaxRows());
         sheet.getRange(2, 1, rows.length, COLUMNS.length).setNumberFormat('@').setValues(rows);
       }
-      const extra = sheet.getLastRow() - rows.length - 1;
+      const extra = previousLastRow - rows.length - 1;
       if (extra > 0) sheet.getRange(rows.length + 2, 1, extra, COLUMNS.length).clearContent();
       SpreadsheetApp.flush();
       revision++;
       properties.setProperty('REVISION', String(revision));
+      entries = body.entries.map(entry => Object.fromEntries(COLUMNS.map(column => [column, entry[column]])));
+    } else {
+      const rows = previousLastRow > 1 ? sheet.getRange(2, 1, previousLastRow - 1, COLUMNS.length).getValues() : [];
+      entries = rows.filter(row => row[0]).map(row => Object.fromEntries(COLUMNS.map((column, i) => [column, JSON.parse(row[i])])));
     }
-    const rows = sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, COLUMNS.length).getValues() : [];
-    const entries = rows.filter(row => row[0]).map(row => Object.fromEntries(COLUMNS.map((column, i) => [column, JSON.parse(row[i])])));
+    cacheSnapshot_(spreadsheetId, { entries: entries, revision: revision });
     return json_({ ok: true, entries: entries, revision: revision, user: user });
   } catch (error) {
     return json_({ ok: false, error: error.message || 'Request failed.' });
   } finally {
     if (lock && lock.hasLock()) lock.releaseLock();
   }
+}
+
+function cachedSnapshot_(spreadsheetId, revision) {
+  try {
+    const raw = CacheService.getScriptCache().get('brain:' + spreadsheetId + ':' + revision);
+    const snapshot = raw ? JSON.parse(raw) : null;
+    return snapshot && snapshot.revision === revision && Array.isArray(snapshot.entries) ? snapshot : null;
+  } catch (_) { return null; } // Cache eviction/unavailability is harmless.
+}
+function cacheSnapshot_(spreadsheetId, snapshot) {
+  try {
+    const value = JSON.stringify(snapshot);
+    // Conservative limit stays below CacheService's 100 KB per value, even for emoji.
+    if (value.length < 22000) CacheService.getScriptCache().put('brain:' + spreadsheetId + ':' + snapshot.revision, value, 120);
+  } catch (_) { /* A committed write must not fail because caching is unavailable. */ }
 }
 
 function authorize_(token, properties) {

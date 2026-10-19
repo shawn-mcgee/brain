@@ -251,6 +251,55 @@ test("dependencies precede dependent tasks even if their due date is later", () 
   );
   assert.match(validateEntry({ ...b, requires: ["a"] }, [a, b]), /cycle/);
 });
+test("Show completed in everything reveals recurring history and allows reopening the checked occurrence", () => {
+  const task = entry({
+    task: true,
+    endsOn: "2026-10-19",
+    repeat: "Weekly",
+    completedDates: ["2026-10-19"],
+  });
+  assert.deepEqual(
+    todoOccurrences([task], "2026-10-19", "All", false).map((o) => o.date),
+    ["2026-10-26"],
+  );
+  const visible = todoOccurrences([task], "2026-10-19", "All", true);
+  assert.deepEqual(
+    visible.map((o) => [o.date, isDone(o.entry, o.date)]),
+    [
+      ["2026-10-19", true],
+      ["2026-10-26", false],
+    ],
+  );
+  const reopened = {
+    ...task,
+    completedDates: task.completedDates.filter(
+      (date) => date !== visible[0].date,
+    ),
+  };
+  assert.deepEqual(
+    todoOccurrences([reopened], "2026-10-19", "All", false).map((o) => o.date),
+    ["2026-10-19"],
+  );
+  assert.equal(reopened.endsOn, "2026-10-19");
+});
+test("completed recurring history includes each checked date once with its original span", () => {
+  const task = entry({
+    task: true,
+    beginsOn: "2026-10-18",
+    endsOn: "2026-10-19",
+    repeat: "Weekly",
+    completedDates: ["2026-10-18", "2026-10-18", "2026-10-25"],
+  });
+  const visible = todoOccurrences([task], "2026-10-26", "All", true);
+  assert.deepEqual(
+    visible.map((o) => [o.start, o.end]),
+    [
+      ["2026-10-18", "2026-10-19"],
+      ["2026-10-25", "2026-10-26"],
+      ["2026-11-01", "2026-11-02"],
+    ],
+  );
+});
 test("recurring completion is per occurrence and leaves original anchor intact", () => {
   const e = entry({
     task: true,

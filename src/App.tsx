@@ -33,14 +33,28 @@ import type { Store } from "./storage";
 import { login, logout } from "./auth";
 import type { Session } from "./auth";
 import { mergeEntries, synchronize } from "./sync";
+import { taskParticles } from "./personality";
+import TaskCelebration from "./TaskCelebration";
+import type { Celebration } from "./TaskCelebration";
+import SignInCharacter from "./SignInCharacter";
+import Curiosity from "./Curiosity";
+import { toggleDisclosure } from "./disclosure";
+import {
+  sectionNames,
+  sectionEmoji,
+  initialEntrySections,
+  availableEntrySections,
+  removeEntrySection,
+} from "./entry-sections";
+import type { EntrySection as Section } from "./entry-sections";
 import "./App.css";
 
-type View = "Todo" | "Calendar" | "Budget";
+type View = "Inbox" | "Todo" | "Calendar" | "Budget";
 const icons: Record<string, string> = {
-  Inbox: "▤",
-  Todo: "☑",
-  Calendar: "▦",
-  Budget: "◷",
+  Inbox: "📥",
+  Todo: "✅",
+  Calendar: "📅",
+  Budget: "💰",
 };
 const money = (n: number) =>
   new Intl.NumberFormat(undefined, {
@@ -88,7 +102,7 @@ function Modal({
           aria-label="Close dialog"
           onClick={close}
         >
-          ×
+          Close
         </button>
       </div>
       {children}
@@ -101,14 +115,56 @@ function Editor({
   entries,
   save,
   close,
+  embedded = false,
 }: {
   entry: Entry;
   entries: Entry[];
   save: (e: Entry) => void;
   close: () => void;
+  embedded?: boolean;
 }) {
   const [draft, setDraft] = useState(entry),
     [error, setError] = useState("");
+  const noteSectionRef = useRef<HTMLDetailsElement>(null);
+  const [sections, setSections] = useState<Section[]>(() =>
+    initialEntrySections(entry),
+  );
+  const availableSections = availableEntrySections(sections);
+  const sectionRefs = useRef<
+    Partial<Record<Section, HTMLDetailsElement | null>>
+  >({});
+  const sectionButtonRefs = useRef<
+    Partial<Record<Section, HTMLButtonElement | null>>
+  >({});
+  const [sectionStatus, setSectionStatus] = useState("");
+  function removeSection(section: Section) {
+    const removed = removeEntrySection(draft, sections, section);
+    const removedRepeat =
+      sections.includes("repeat") &&
+      !removed.sections.includes("repeat") &&
+      section !== "repeat";
+    setDraft(removed.entry);
+    setSections(removed.sections);
+    setError("");
+    setSectionStatus(
+      `${sectionNames[section]} removed. Its form values were cleared.${removedRepeat ? " Repeats was also removed because no time sections remain." : ""}`,
+    );
+    requestAnimationFrame(() => sectionButtonRefs.current[section]?.focus());
+  }
+  function addSection(section: Section) {
+    if (!availableSections.includes(section)) return;
+    setSections((current) =>
+      current.includes(section) ? current : [...current, section],
+    );
+    if (section === "task") setDraft((current) => ({ ...current, task: true }));
+    requestAnimationFrame(() => {
+      const element = sectionRefs.current[section];
+      if (element) {
+        element.open = true;
+        element.querySelector<HTMLElement>("input, select, textarea")?.focus();
+      }
+    });
+  }
   const update = (values: Partial<Entry>) =>
     setDraft((d) => ({ ...d, ...values }));
   function submit(e: FormEvent) {
@@ -118,31 +174,42 @@ function Editor({
       note: draft.note.trim(),
       updatedAt: new Date().toISOString(),
     };
-    const issue = validateEntry(cleaned, entries);
-    if (issue) setError(issue);
-    else save(cleaned);
+    const issue =
+      sections.includes("money") &&
+      !cleaned.budgetType &&
+      !cleaned.transactionType
+        ? "Choose an entry type for Money, or remove the Money section."
+        : validateEntry(cleaned, entries);
+    if (issue) {
+      setError(issue);
+      Object.values(sectionRefs.current).forEach((section) => {
+        if (section) section.open = true;
+      });
+    } else save(cleaned);
   }
-  return (
-    <Modal
-      title={
-        entries.some((e) => e.id === entry.id) ? "Edit entry" : "New entry"
-      }
-      close={close}
-    >
-      <form onSubmit={submit} className="editor">
+  const fields = {
+    note: (
+      <>
         <label>
-          Note
+          <span className="screen-reader-only">Note</span>
           <textarea
             autoFocus
             required
+            onInvalid={() => {
+              if (noteSectionRef.current) noteSectionRef.current.open = true;
+            }}
             rows={3}
             placeholder="Note or title"
             value={draft.note}
             onChange={(e) => update({ note: e.target.value })}
           />
         </label>
+      </>
+    ),
+    who: (
+      <>
         <label>
-          Who <span className="muted">· separate names with commas</span>
+          <span className="screen-reader-only">Who</span>
           <input
             value={draft.who.join(", ")}
             onChange={(e) =>
@@ -160,195 +227,294 @@ function Editor({
             placeholder="Names, separated by commas"
           />
         </label>
-        <label className="check-label">
-          <input
-            type="checkbox"
-            checked={draft.task}
-            onChange={(e) => update({ task: e.target.checked })}
-          />{" "}
-          This is a task
-        </label>
-        <fieldset>
-          <legend>Dates & repetition</legend>
-          <div className="form-grid">
-            <label>
-              Begins on
-              <input
-                type="date"
-                min="1900-01-01"
-                max="2200-12-31"
-                value={draft.beginsOn}
-                onChange={(e) =>
-                  update({
-                    beginsOn: e.target.value,
-                    beginsAt: e.target.value ? draft.beginsAt : "",
-                  })
-                }
-              />
-            </label>
-            <label>
-              At
-              <input
-                type="time"
-                disabled={!draft.beginsOn}
-                value={draft.beginsAt}
-                onChange={(e) => update({ beginsAt: e.target.value })}
-              />
-            </label>
-            <label>
-              Ends / due on
-              <input
-                type="date"
-                min="1900-01-01"
-                max="2200-12-31"
-                value={draft.endsOn}
-                onChange={(e) =>
-                  update({
-                    endsOn: e.target.value,
-                    endsAt: e.target.value ? draft.endsAt : "",
-                  })
-                }
-              />
-            </label>
-            <label>
-              At
-              <input
-                type="time"
-                disabled={!draft.endsOn}
-                value={draft.endsAt}
-                onChange={(e) => update({ endsAt: e.target.value })}
-              />
-            </label>
-          </div>
+      </>
+    ),
+    task: <p className="hint">This item can be marked as complete.</p>,
+    begins: (
+      <>
+        <div className="form-grid">
           <label>
-            Repeats
-            <select
-              value={draft.repeat}
+            Date
+            <input
+              type="date"
+              min="1900-01-01"
+              max="2200-12-31"
+              value={draft.beginsOn}
               onChange={(e) =>
-                update({ repeat: e.target.value as Entry["repeat"] })
+                update({
+                  beginsOn: e.target.value,
+                  beginsAt: e.target.value ? draft.beginsAt : "",
+                })
               }
-            >
-              <option value="">Does not repeat</option>
-              {intervals.map((i) => (
-                <option key={i}>{i}</option>
+            />
+          </label>
+          <label>
+            Time
+            <input
+              type="time"
+              disabled={!draft.beginsOn}
+              value={draft.beginsAt}
+              onChange={(e) => update({ beginsAt: e.target.value })}
+            />
+          </label>
+        </div>
+      </>
+    ),
+    ends: (
+      <>
+        <div className="form-grid">
+          <label>
+            Date
+            <input
+              type="date"
+              min="1900-01-01"
+              max="2200-12-31"
+              value={draft.endsOn}
+              onChange={(e) =>
+                update({
+                  endsOn: e.target.value,
+                  endsAt: e.target.value ? draft.endsAt : "",
+                })
+              }
+            />
+          </label>
+          <label>
+            Time
+            <input
+              type="time"
+              disabled={!draft.endsOn}
+              value={draft.endsAt}
+              onChange={(e) => update({ endsAt: e.target.value })}
+            />
+          </label>
+        </div>
+      </>
+    ),
+    repeat: (
+      <>
+        <label>
+          <span className="screen-reader-only">Repeats</span>
+          <select
+            value={draft.repeat}
+            onChange={(e) =>
+              update({ repeat: e.target.value as Entry["repeat"] })
+            }
+          >
+            <option value="">Does not repeat</option>
+            {intervals.map((i) => (
+              <option key={i}>{i}</option>
+            ))}
+          </select>
+        </label>
+      </>
+    ),
+    requires: (
+      <>
+        <p className="hint">
+          Required tasks must be done first. Other entries act as reference
+          information.
+        </p>
+        {entries.filter((e) => e.id !== draft.id).length ? (
+          <div className="dependency-options">
+            {entries
+              .filter((e) => e.id !== draft.id)
+              .map((e) => (
+                <label key={e.id} className="check-label">
+                  <input
+                    type="checkbox"
+                    checked={draft.requires.includes(e.id)}
+                    onChange={(event) =>
+                      update({
+                        requires: event.target.checked
+                          ? [...draft.requires, e.id]
+                          : draft.requires.filter((id) => id !== e.id),
+                      })
+                    }
+                  />
+                  {e.note}
+                </label>
               ))}
+          </div>
+        ) : (
+          <p className="muted">Add another entry to link a requirement.</p>
+        )}
+      </>
+    ),
+    money: (
+      <>
+        <div className="form-grid">
+          <label>
+            Type (required)
+            <select
+              required
+              value={
+                draft.budgetType
+                  ? `budget-${draft.budgetType}`
+                  : draft.transactionType
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                update({
+                  budgetType: v.startsWith("budget-")
+                    ? (v.slice(7) as Entry["budgetType"])
+                    : "",
+                  transactionType:
+                    v && !v.startsWith("budget-")
+                      ? (v as Entry["transactionType"])
+                      : "",
+                  budgetId: "",
+                });
+              }}
+            >
+              <option value="" disabled hidden />
+              <option value="budget-income">Planned income</option>
+              <option value="budget-expense">Planned expense</option>
+              <option value="income">Actual income</option>
+              <option value="expense">Actual expense</option>
             </select>
           </label>
-        </fieldset>
-        <details open={draft.requires.length > 0}>
-          <summary>
-            Requires <span>{draft.requires.length || ""}</span>
-          </summary>
-          <p className="hint">
-            Required tasks must be done first. Other entries act as reference
-            information.
-          </p>
-          {entries.filter((e) => e.id !== draft.id).length ? (
-            <div className="dependency-options">
+          <label>
+            Amount (USD)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              disabled={!draft.budgetType && !draft.transactionType}
+              value={draft.amount}
+              onChange={(e) => update({ amount: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+        {draft.transactionType && (
+          <label>
+            Budget item
+            <select
+              value={draft.budgetId}
+              onChange={(e) => update({ budgetId: e.target.value })}
+            >
+              <option value="">One-off transaction</option>
               {entries
-                .filter((e) => e.id !== draft.id)
+                .filter(
+                  (e) =>
+                    e.id !== draft.id && e.budgetType === draft.transactionType,
+                )
                 .map((e) => (
-                  <label key={e.id} className="check-label">
-                    <input
-                      type="checkbox"
-                      checked={draft.requires.includes(e.id)}
-                      onChange={(event) =>
-                        update({
-                          requires: event.target.checked
-                            ? [...draft.requires, e.id]
-                            : draft.requires.filter((id) => id !== e.id),
-                        })
-                      }
-                    />
+                  <option key={e.id} value={e.id}>
                     {e.note}
-                  </label>
+                  </option>
                 ))}
-            </div>
-          ) : (
-            <p className="muted">Add another entry to link a requirement.</p>
-          )}
+            </select>
+          </label>
+        )}
+      </>
+    ),
+  };
+  const form = (
+    <form onSubmit={submit} className="editor">
+      <div className="entry-section note-section">
+        <details className="entry-field-section" open ref={noteSectionRef}>
+          <summary
+            onClick={(event) => {
+              event.preventDefault();
+              toggleDisclosure(
+                event.currentTarget.parentElement as HTMLDetailsElement,
+              );
+            }}
+          >
+            <span aria-hidden="true">📝</span> Note <Curiosity />
+          </summary>
+          <div className="entry-section-fields">{fields.note}</div>
         </details>
-        <details open={!!(draft.budgetType || draft.transactionType)}>
-          <summary>Money</summary>
-          <div className="form-grid">
-            <label>
-              Entry type
-              <select
-                value={
-                  draft.budgetType
-                    ? `budget-${draft.budgetType}`
-                    : draft.transactionType
-                }
-                onChange={(e) => {
-                  const v = e.target.value;
-                  update({
-                    budgetType: v.startsWith("budget-")
-                      ? (v.slice(7) as Entry["budgetType"])
-                      : "",
-                    transactionType:
-                      v && !v.startsWith("budget-")
-                        ? (v as Entry["transactionType"])
-                        : "",
-                    budgetId: "",
-                  });
+      </div>
+      {sections.map((section) => (
+        <div className="entry-section" key={section}>
+          <details
+            className="entry-field-section"
+            open
+            ref={(element) => {
+              sectionRefs.current[section] = element;
+            }}
+          >
+            <summary
+              onClick={(event) => {
+                event.preventDefault();
+                toggleDisclosure(
+                  event.currentTarget.parentElement as HTMLDetailsElement,
+                );
+              }}
+            >
+              <span className="entry-section-heading">
+                <span aria-hidden="true">{sectionEmoji[section]}</span>{" "}
+                {sectionNames[section]} <Curiosity />
+              </span>
+              <button
+                type="button"
+                className="remove-section"
+                aria-label={`Remove ${sectionNames[section]} section`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  removeSection(section);
                 }}
               >
-                <option value="">No financial details</option>
-                <option value="budget-income">Planned income</option>
-                <option value="budget-expense">Planned expense</option>
-                <option value="income">Actual income</option>
-                <option value="expense">Actual expense</option>
-              </select>
-            </label>
-            <label>
-              Amount (USD)
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                disabled={!draft.budgetType && !draft.transactionType}
-                value={draft.amount}
-                onChange={(e) => update({ amount: Number(e.target.value) })}
-              />
-            </label>
-          </div>
-          {draft.transactionType && (
-            <label>
-              Linked budget item
-              <select
-                value={draft.budgetId}
-                onChange={(e) => update({ budgetId: e.target.value })}
-              >
-                <option value="">One-off transaction</option>
-                {entries
-                  .filter(
-                    (e) =>
-                      e.id !== draft.id &&
-                      e.budgetType === draft.transactionType,
-                  )
-                  .map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.note}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          )}
-        </details>
-        {error && (
-          <p role="alert" className="error">
-            {error}
-          </p>
-        )}
-        <div className="modal-actions">
-          <button type="button" className="secondary" onClick={close}>
-            Cancel
-          </button>
-          <button className="primary" type="submit">
-            Save entry <span>↗</span>
-          </button>
+                <span aria-hidden="true">✖️</span> Remove
+              </button>
+            </summary>
+            <div className="entry-section-fields">{fields[section]}</div>
+          </details>
         </div>
-      </form>
+      ))}
+      {availableSections.length > 0 && (
+        <div
+          className="entry-section-buttons"
+          role="group"
+          aria-label="Add fields"
+        >
+          {availableSections.map((section) => (
+            <button
+              key={section}
+              type="button"
+              className="secondary"
+              ref={(button) => {
+                sectionButtonRefs.current[section] = button;
+              }}
+              onClick={() => addSection(section)}
+            >
+              <span aria-hidden="true">{sectionEmoji[section]}</span>{" "}
+              {sectionNames[section]}
+            </button>
+          ))}
+        </div>
+      )}
+      <span className="screen-reader-only" role="status">
+        {sectionStatus}
+      </span>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      <div className="modal-actions">
+        <button type="button" className="secondary" onClick={close}>
+          {embedded ? "Clear" : "Cancel"}
+        </button>
+        <button className="primary" type="submit">
+          Save entry <span aria-hidden="true">💾</span>
+        </button>
+      </div>
+    </form>
+  );
+  return embedded ? (
+    <section className="inbox-form" aria-label="New entry">
+      {form}
+    </section>
+  ) : (
+    <Modal
+      title={
+        entries.some((e) => e.id === entry.id) ? "Edit entry" : "New entry"
+      }
+      close={close}
+    >
+      {form}
     </Modal>
   );
 }
@@ -369,9 +535,10 @@ function App() {
     [storageError, setStorageError] = useState(initial.error);
   const [session, setSession] = useState<Session | null>(null),
     [localMode, setLocalMode] = useState(false);
-  const [view, setView] = useState<View>("Todo"),
+  const [view, setView] = useState<View>("Inbox"),
     [editor, setEditor] = useState<Entry | null>(null),
     [settings, setSettings] = useState(false);
+  const [inboxEntry, setInboxEntry] = useState(blankEntry);
   const [search, setSearch] = useState(""),
     [person, setPerson] = useState(""),
     [showDone, setShowDone] = useState(false);
@@ -380,6 +547,13 @@ function App() {
     [busy, setBusy] = useState(false);
   const [syncFailures, setSyncFailures] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [signInStage, setSignInStage] = useState<"google" | "sheet" | null>(
+    null,
+  );
+  const signInAttempt = useRef<AbortController | null>(null);
+  useEffect(() => () => signInAttempt.current?.abort(), []);
+  const [celebrations, setCelebrations] = useState<Celebration[]>([]);
+  const [taskFeedback, setTaskFeedback] = useState("");
   const [calendarAnchor, setCalendarAnchor] = useState(() =>
     dateKey(new Date()),
   );
@@ -481,9 +655,23 @@ function App() {
     }
     busyRef.current = true;
     setBusy(true);
+    const attempt = new AbortController();
+    signInAttempt.current = attempt;
+    setSignInStage("google");
     try {
-      const auth = await login(store.connection.clientId);
-      const data = await request(store.connection, auth.token, "read");
+      const auth = await login(store.connection.clientId, {
+        signal: attempt.signal,
+      });
+      setSignInStage("sheet");
+      const data = await request(
+        store.connection,
+        auth.token,
+        "read",
+        undefined,
+        undefined,
+        attempt.signal,
+      );
+      if (attempt.signal.aborted) return;
       setSession({ ...auth, ...data.user });
       setLocalMode(false);
       const current = stateRef.current;
@@ -503,8 +691,17 @@ function App() {
           "Concurrent versions were preserved as separate entries during automatic merge.",
         );
     } catch (e) {
-      setError(message(e));
+      setError(
+        attempt.signal.aborted
+          ? "Sign-in canceled."
+          : e instanceof Error &&
+              (e.name === "TimeoutError" || e.name === "AbortError")
+            ? "The Sheet connection timed out. Check your Apps Script deployment and try again."
+            : message(e),
+      );
     } finally {
+      signInAttempt.current = null;
+      setSignInStage(null);
       busyRef.current = false;
       setBusy(false);
     }
@@ -571,19 +768,21 @@ function App() {
       setSyncing(false);
     }
   }
-  function saveEntry(entry: Entry) {
+  function saveEntry(entry: Entry, source: "popup" | "inbox" = "popup") {
     const current = stateRef.current.entries;
     // Preserve remote changes received while this editor was open.
-    const base = editor?.note.trim()
-      ? [...current.filter((e) => e.id !== entry.id), editor]
-      : current;
+    const base =
+      source === "popup" && editor?.note.trim()
+        ? [...current.filter((e) => e.id !== entry.id), editor]
+        : current;
     const merged = mergeEntries(
       base,
       [...current.filter((e) => e.id !== entry.id), entry],
       current,
     );
     if (change(merged.entries)) {
-      setEditor(null);
+      if (source === "inbox") setInboxEntry(blankEntry());
+      else setEditor(null);
       setNotice(
         merged.conflicts
           ? "Concurrent versions were preserved as separate entries."
@@ -611,7 +810,7 @@ function App() {
         })),
     );
   }
-  function toggle(entry: Entry, date?: string) {
+  function toggle(entry: Entry, date?: string, origin?: HTMLElement) {
     const done = isDone(entry, date);
     if (!done) {
       const blocked = entry.requires
@@ -633,8 +832,26 @@ function App() {
           }
         : { completed: !done }),
     };
-    change(store.entries.map((e) => (e.id === entry.id ? updated : e)));
-    setError("");
+    if (change(store.entries.map((e) => (e.id === entry.id ? updated : e)))) {
+      setError("");
+      setTaskFeedback(`${done ? "Reopened" : "Completed"}: ${entry.note}`);
+      if (
+        !done &&
+        origin &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        const box = origin.getBoundingClientRect();
+        const celebration: Celebration = {
+          id: crypto.randomUUID(),
+          entryId: entry.id,
+          date,
+          x: box.left + box.width / 2,
+          y: box.top + box.height / 2,
+          particles: taskParticles(entry),
+        };
+        setCelebrations((current) => [...current.slice(-3), celebration]);
+      }
+    }
   }
   function exportData() {
     const blob = new Blob(
@@ -678,12 +895,6 @@ function App() {
       (!person || e.who.includes(person)),
   );
   const todoItems = todoOccurrences(filtered, today, todoPeriod, showDone);
-  const pending = store.entries.filter(
-    (e) => e.task && (e.repeat || !e.completed),
-  ).length;
-  const upcoming = store.entries.filter(
-    (e) => occurrences(e, today, addDays(today, 6)).length > 0,
-  ).length;
   const calendarRange = periodRange(
     calendarPeriod === "All" ? "This Month" : calendarPeriod,
     calendarAnchor,
@@ -749,27 +960,29 @@ function App() {
       parent = store.entries.find((x) => x.id === e.budgetId);
     return (
       <article
-        className={`entry-row ${done ? "done" : ""}`}
+        className={`entry-row ${done ? "done" : ""} ${celebrations.some((c) => c.entryId === e.id && c.date === date) ? "celebrating" : ""}`}
         key={`${e.id}:${date || ""}`}
       >
         {e.task ? (
           <button
             className={`task-check ${done ? "checked" : ""}`}
             aria-label={`${done ? "Reopen" : "Complete"} ${e.note}`}
+            aria-pressed={done}
             disabled={busy}
-            onClick={() => toggle(e, date)}
+            onClick={(event) => toggle(e, date, event.currentTarget)}
           >
-            {done ? "✓" : ""}
+            {done ? "✅" : ""}
           </button>
         ) : (
           <span
+            aria-hidden="true"
             className={`entry-icon ${e.budgetType || e.transactionType ? "financial" : ""}`}
           >
             {e.budgetType || e.transactionType
-              ? "$"
+              ? "💰"
               : e.beginsOn || e.endsOn
-                ? "▦"
-                : "≡"}
+                ? "📅"
+                : "📝"}
           </span>
         )}
         <button
@@ -785,11 +998,11 @@ function App() {
                 {p}
               </span>
             ))}
-            {e.repeat && <span>↻ {e.repeat}</span>}
+            {e.repeat && <span>🔁 {e.repeat}</span>}
             {e.requires.length > 0 && (
-              <span>↳ {e.requires.length} required</span>
+              <span>🔗 {e.requires.length} required</span>
             )}
-            {parent && <span>↗ {parent.note}</span>}
+            {parent && <span>🔗 {parent.note}</span>}
             {!e.task &&
               !e.beginsOn &&
               !e.endsOn &&
@@ -797,6 +1010,7 @@ function App() {
               !e.who.length &&
               !e.budgetType &&
               !e.transactionType && <span>Note</span>}
+            <Curiosity />
           </span>
         </button>
         {(e.budgetType || e.transactionType) && (
@@ -810,6 +1024,7 @@ function App() {
           <span
             className={`due ${e.task && due < today && !done ? "overdue" : ""}`}
           >
+            <span>{e.endsOn ? (e.task ? "Due" : "Ends") : "Starts"} </span>
             <time dateTime={due}>
               {view === "Todo"
                 ? formatDate(due, true)
@@ -823,13 +1038,17 @@ function App() {
             )}
           </span>
         )}
+        <span className="entry-sweat" aria-hidden="true">
+          <span>💧</span>
+          <span>💧</span>
+        </span>
         <button
           className="delete-button"
           aria-label={`Delete ${e.note}`}
           disabled={busy}
           onClick={() => remove(e)}
         >
-          ×
+          🗑️ Delete
         </button>
       </article>
     );
@@ -853,7 +1072,7 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#" onClick={() => setView("Todo")}>
+        <a className="brand" href="#" onClick={() => setView("Inbox")}>
           Brain
         </a>
         <nav aria-label="Main navigation">
@@ -861,17 +1080,13 @@ function App() {
             <button
               key={v}
               className={view === v ? "active" : ""}
-              disabled={v === "Inbox" && (!unlocked || busy)}
-              aria-haspopup={v === "Inbox" ? "dialog" : undefined}
-              onClick={() =>
-                v === "Inbox" ? setEditor(blankEntry()) : setView(v)
-              }
+              aria-current={view === v ? "page" : undefined}
+              onClick={() => setView(v)}
             >
-              <span className="nav-icon">{icons[v]}</span>
+              <span className="nav-icon" aria-hidden="true">
+                {icons[v]}
+              </span>
               {v}
-              {unlocked && v === "Todo" && pending > 0 && (
-                <span className="nav-count">{pending}</span>
-              )}
               {view === v && <span className="active-dot">●</span>}
             </button>
           ))}
@@ -883,14 +1098,14 @@ function App() {
               setSettings(true);
             }}
           >
-            ⚙ <span>Settings & connections</span>
+            <span>⚙️ Settings</span>
           </button>
           {session && (
             <div className="account">
               <span className="avatar">{session.name.charAt(0)}</span>
               <div>
                 <strong>{session.name}</strong>
-                <small>{session.email}</small>
+                <small title={session.email}>{session.email}</small>
               </div>
               <button
                 aria-label="Sign out"
@@ -903,7 +1118,7 @@ function App() {
                   setError("");
                 }}
               >
-                ↪
+                Sign out
               </button>
             </div>
           )}
@@ -937,7 +1152,7 @@ function App() {
                 onClick={() => sync()}
                 disabled={busy || syncing}
               >
-                {busy || syncing ? "Syncing…" : "↻ Sync now"}
+                {busy || syncing ? "Syncing…" : "🔄 Sync now"}
               </button>
             )}
           </div>
@@ -964,6 +1179,7 @@ function App() {
           )}
           {!unlocked ? (
             <section className="welcome">
+              <SignInCharacter />
               <h1>Sign in</h1>
               <p>Use your Google account to access shared entries.</p>
               <button
@@ -972,8 +1188,20 @@ function App() {
                 disabled={busy}
               >
                 <b>G</b>
-                {busy ? "Connecting…" : "Continue with Google"}
+                {signInStage === "google"
+                  ? "Waiting for Google…"
+                  : signInStage === "sheet"
+                    ? "Connecting to Sheet…"
+                    : "Continue with Google"}
               </button>
+              {signInStage && (
+                <button
+                  className="text-button"
+                  onClick={() => signInAttempt.current?.abort()}
+                >
+                  Cancel sign-in
+                </button>
+              )}
               <small>
                 Only accounts on your family’s whitelist can connect.
               </small>
@@ -1001,19 +1229,25 @@ function App() {
                 <div>
                   <h1>{view}</h1>
                 </div>
-                <button
-                  className="primary"
-                  disabled={busy}
-                  onClick={() =>
-                    setEditor({
-                      ...blankEntry(),
-                      task: view === "Todo",
-                      ...(view === "Calendar" ? { beginsOn: selectedDay } : {}),
-                    })
-                  }
-                >
-                  + <span>Add entry</span>
-                </button>
+                {view !== "Inbox" && (
+                  <>
+                    <button
+                      className="primary"
+                      disabled={busy}
+                      onClick={() =>
+                        setEditor({
+                          ...blankEntry(),
+                          task: view === "Todo",
+                          ...(view === "Calendar"
+                            ? { beginsOn: selectedDay }
+                            : {}),
+                        })
+                      }
+                    >
+                      + <span>Add entry</span>
+                    </button>
+                  </>
+                )}
               </section>
               {localMode && (
                 <div className="local-banner">
@@ -1026,67 +1260,60 @@ function App() {
                   </button>
                 </div>
               )}
-              <section className="stats-grid">
-                <div className="stat">
-                  <div>
-                    <span>Total entries</span>
-                    <strong>{store.entries.length}</strong>
-                  </div>
-                </div>
-                <div className="stat">
-                  <div>
-                    <span>Open tasks</span>
-                    <strong>{pending}</strong>
-                  </div>
-                </div>
-                <div className="stat">
-                  <div>
-                    <span>Next 7 days</span>
-                    <strong>{upcoming}</strong>
-                  </div>
-                </div>
-              </section>
-              <div className="workspace-toolbar">
-                <div className="view-label">
-                  <span>{icons[view]}</span>
-                  <h2>
-                    {view === "Todo"
-                      ? "Tasks & coming up"
-                      : view === "Calendar"
-                        ? calendarPeriod === "All"
-                          ? "All dated entries"
-                          : parseDate(calendarRange.from).toLocaleDateString(
-                              undefined,
-                              {
-                                month: "long",
-                                year: "numeric",
-                              },
-                            )
-                        : "All-time overview"}
-                  </h2>
-                </div>
-                <div className="filters">
-                  <label className="search">
-                    <span>⌕</span>
-                    <input
-                      aria-label="Search entries"
-                      placeholder="Find an entry…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                  </label>
-                  <select
-                    aria-label="Filter by person"
-                    value={person}
-                    onChange={(e) => setPerson(e.target.value)}
-                  >
-                    <option value="">Everyone</option>
-                    {people.map((p) => (
-                      <option key={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
+              <div hidden={view !== "Inbox"}>
+                <Editor
+                  key={inboxEntry.id}
+                  entry={inboxEntry}
+                  entries={store.entries}
+                  embedded
+                  save={(entry) => saveEntry(entry, "inbox")}
+                  close={() => setInboxEntry(blankEntry())}
+                />
               </div>
+              {view !== "Inbox" && (
+                <>
+                  <div className="workspace-toolbar">
+                    <div className="view-label">
+                      <span aria-hidden="true">{icons[view]}</span>
+                      <h2>
+                        {view === "Todo"
+                          ? "Tasks & coming up"
+                          : view === "Calendar"
+                            ? calendarPeriod === "All"
+                              ? "All dated entries"
+                              : parseDate(
+                                  calendarRange.from,
+                                ).toLocaleDateString(undefined, {
+                                  month: "long",
+                                  year: "numeric",
+                                })
+                            : "All-time overview"}
+                      </h2>
+                    </div>
+                    <div className="filters">
+                      <label className="search">
+                        <span aria-hidden="true">🔎</span>
+                        <input
+                          aria-label="Search entries"
+                          placeholder="Find an entry…"
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                        />
+                      </label>
+                      <select
+                        aria-label="Filter by person"
+                        value={person}
+                        onChange={(e) => setPerson(e.target.value)}
+                      >
+                        <option value="">Everyone</option>
+                        {people.map((p) => (
+                          <option key={p}>{p}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
               {view === "Todo" && (
                 <>
                   <div className="range-toolbar">
@@ -1185,7 +1412,7 @@ function App() {
                             disabled={calendarRange.from <= "1900-01-01"}
                             onClick={() => moveCalendar(-1)}
                           >
-                            &lsaquo;
+                            ⬅️
                           </button>
                           <button
                             aria-label="Next period"
@@ -1193,12 +1420,14 @@ function App() {
                             disabled={calendarRange.to >= "2200-12-31"}
                             onClick={() => moveCalendar(1)}
                           >
-                            &rsaquo;
+                            ➡️
                           </button>
                         </div>
                       </div>
                       {calendarLayout !== "Today" && (
                         <section
+                          tabIndex={0}
+                          aria-label="Calendar grid. Scroll horizontally to view all days on smaller screens."
                           className={`calendar ${calendarLayout === "This Week" ? "week-calendar" : ""}`}
                         >
                           <div className="weekdays">
@@ -1454,6 +1683,22 @@ function App() {
           )}
         </div>
       </main>
+      <span className="screen-reader-only" role="status">
+        {taskFeedback}
+      </span>
+      <div className="completion-effects" aria-hidden="true">
+        {celebrations.map((celebration) => (
+          <TaskCelebration
+            key={celebration.id}
+            celebration={celebration}
+            onFinish={() =>
+              setCelebrations((current) =>
+                current.filter((c) => c.id !== celebration.id),
+              )
+            }
+          />
+        ))}
+      </div>
       {editor && (
         <Editor
           entry={editor}
@@ -1557,10 +1802,10 @@ function App() {
                 <hr />
                 <h3>Your data</h3>
                 <button className="secondary" onClick={exportData}>
-                  ↓ Export JSON backup
+                  📤 Export JSON backup
                 </button>
                 <label className="file-label">
-                  ↑ Import JSON backup
+                  📥 Import JSON backup
                   <input
                     type="file"
                     accept="application/json,.json"
