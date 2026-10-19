@@ -1,0 +1,1617 @@
+import { useEffect, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+import {
+  blankEntry,
+  dateKey,
+  parseDate,
+  addDays,
+  daysBetween,
+  intervals,
+  occurrences,
+  isDone,
+  requirementDone,
+  periodRange,
+  periodKind,
+  shiftPeriod,
+  todoOccurrences,
+  occurrenceHighlight,
+  validateEntry,
+  decodeEntries,
+} from "./domain";
+import type { Entry } from "./domain";
+import type { Period } from "./domain";
+import type { TimeWindow } from "./time-window";
+import TimeWindowFilter from "./TimeWindowFilter";
+import {
+  loadStore,
+  saveStore,
+  emptyStore,
+  request,
+  validEndpoint,
+} from "./storage";
+import type { Store } from "./storage";
+import { login, logout } from "./auth";
+import type { Session } from "./auth";
+import { mergeEntries, synchronize } from "./sync";
+import "./App.css";
+
+type View = "Todo" | "Calendar" | "Budget";
+const icons: Record<string, string> = {
+  Inbox: "▤",
+  Todo: "☑",
+  Calendar: "▦",
+  Budget: "◷",
+};
+const money = (n: number) =>
+  new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+  }).format(n);
+const formatDate = (s: string, weekday = false) =>
+  s
+    ? parseDate(s).toLocaleDateString(undefined, {
+        weekday: weekday ? "short" : undefined,
+        month: "short",
+        day: "numeric",
+      })
+    : "";
+const message = (e: unknown) =>
+  e instanceof Error ? e.message : "Something went wrong. Please try again.";
+
+function Modal({
+  title,
+  children,
+  close,
+}: {
+  title: string;
+  children: ReactNode;
+  close: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current!;
+    dialog.showModal();
+    return () => dialog.close();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      onCancel={close}
+      onClick={(e) => {
+        if (e.target === ref.current) close();
+      }}
+    >
+      <div className="modal-head">
+        <h2>{title}</h2>
+        <button
+          className="icon-button"
+          aria-label="Close dialog"
+          onClick={close}
+        >
+          ×
+        </button>
+      </div>
+      {children}
+    </dialog>
+  );
+}
+
+function Editor({
+  entry,
+  entries,
+  save,
+  close,
+}: {
+  entry: Entry;
+  entries: Entry[];
+  save: (e: Entry) => void;
+  close: () => void;
+}) {
+  const [draft, setDraft] = useState(entry),
+    [error, setError] = useState("");
+  const update = (values: Partial<Entry>) =>
+    setDraft((d) => ({ ...d, ...values }));
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const cleaned = {
+      ...draft,
+      note: draft.note.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    const issue = validateEntry(cleaned, entries);
+    if (issue) setError(issue);
+    else save(cleaned);
+  }
+  return (
+    <Modal
+      title={
+        entries.some((e) => e.id === entry.id) ? "Edit entry" : "New entry"
+      }
+      close={close}
+    >
+      <form onSubmit={submit} className="editor">
+        <label>
+          Note
+          <textarea
+            autoFocus
+            required
+            rows={3}
+            placeholder="Note or title"
+            value={draft.note}
+            onChange={(e) => update({ note: e.target.value })}
+          />
+        </label>
+        <label>
+          Who <span className="muted">· separate names with commas</span>
+          <input
+            value={draft.who.join(", ")}
+            onChange={(e) =>
+              update({
+                who: e.target.value.split(",").map((x) => x.trimStart()),
+              })
+            }
+            onBlur={() =>
+              update({
+                who: [
+                  ...new Set(draft.who.map((x) => x.trim()).filter(Boolean)),
+                ],
+              })
+            }
+            placeholder="Names, separated by commas"
+          />
+        </label>
+        <label className="check-label">
+          <input
+            type="checkbox"
+            checked={draft.task}
+            onChange={(e) => update({ task: e.target.checked })}
+          />{" "}
+          This is a task
+        </label>
+        <fieldset>
+          <legend>Dates & repetition</legend>
+          <div className="form-grid">
+            <label>
+              Begins on
+              <input
+                type="date"
+                min="1900-01-01"
+                max="2200-12-31"
+                value={draft.beginsOn}
+                onChange={(e) =>
+                  update({
+                    beginsOn: e.target.value,
+                    beginsAt: e.target.value ? draft.beginsAt : "",
+                  })
+                }
+              />
+            </label>
+            <label>
+              At
+              <input
+                type="time"
+                disabled={!draft.beginsOn}
+                value={draft.beginsAt}
+                onChange={(e) => update({ beginsAt: e.target.value })}
+              />
+            </label>
+            <label>
+              Ends / due on
+              <input
+                type="date"
+                min="1900-01-01"
+                max="2200-12-31"
+                value={draft.endsOn}
+                onChange={(e) =>
+                  update({
+                    endsOn: e.target.value,
+                    endsAt: e.target.value ? draft.endsAt : "",
+                  })
+                }
+              />
+            </label>
+            <label>
+              At
+              <input
+                type="time"
+                disabled={!draft.endsOn}
+                value={draft.endsAt}
+                onChange={(e) => update({ endsAt: e.target.value })}
+              />
+            </label>
+          </div>
+          <label>
+            Repeats
+            <select
+              value={draft.repeat}
+              onChange={(e) =>
+                update({ repeat: e.target.value as Entry["repeat"] })
+              }
+            >
+              <option value="">Does not repeat</option>
+              {intervals.map((i) => (
+                <option key={i}>{i}</option>
+              ))}
+            </select>
+          </label>
+        </fieldset>
+        <details open={draft.requires.length > 0}>
+          <summary>
+            Requires <span>{draft.requires.length || ""}</span>
+          </summary>
+          <p className="hint">
+            Required tasks must be done first. Other entries act as reference
+            information.
+          </p>
+          {entries.filter((e) => e.id !== draft.id).length ? (
+            <div className="dependency-options">
+              {entries
+                .filter((e) => e.id !== draft.id)
+                .map((e) => (
+                  <label key={e.id} className="check-label">
+                    <input
+                      type="checkbox"
+                      checked={draft.requires.includes(e.id)}
+                      onChange={(event) =>
+                        update({
+                          requires: event.target.checked
+                            ? [...draft.requires, e.id]
+                            : draft.requires.filter((id) => id !== e.id),
+                        })
+                      }
+                    />
+                    {e.note}
+                  </label>
+                ))}
+            </div>
+          ) : (
+            <p className="muted">Add another entry to link a requirement.</p>
+          )}
+        </details>
+        <details open={!!(draft.budgetType || draft.transactionType)}>
+          <summary>Money</summary>
+          <div className="form-grid">
+            <label>
+              Entry type
+              <select
+                value={
+                  draft.budgetType
+                    ? `budget-${draft.budgetType}`
+                    : draft.transactionType
+                }
+                onChange={(e) => {
+                  const v = e.target.value;
+                  update({
+                    budgetType: v.startsWith("budget-")
+                      ? (v.slice(7) as Entry["budgetType"])
+                      : "",
+                    transactionType:
+                      v && !v.startsWith("budget-")
+                        ? (v as Entry["transactionType"])
+                        : "",
+                    budgetId: "",
+                  });
+                }}
+              >
+                <option value="">No financial details</option>
+                <option value="budget-income">Planned income</option>
+                <option value="budget-expense">Planned expense</option>
+                <option value="income">Actual income</option>
+                <option value="expense">Actual expense</option>
+              </select>
+            </label>
+            <label>
+              Amount (USD)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                disabled={!draft.budgetType && !draft.transactionType}
+                value={draft.amount}
+                onChange={(e) => update({ amount: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+          {draft.transactionType && (
+            <label>
+              Linked budget item
+              <select
+                value={draft.budgetId}
+                onChange={(e) => update({ budgetId: e.target.value })}
+              >
+                <option value="">One-off transaction</option>
+                {entries
+                  .filter(
+                    (e) =>
+                      e.id !== draft.id &&
+                      e.budgetType === draft.transactionType,
+                  )
+                  .map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.note}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+        </details>
+        {error && (
+          <p role="alert" className="error">
+            {error}
+          </p>
+        )}
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={close}>
+            Cancel
+          </button>
+          <button className="primary" type="submit">
+            Save entry <span>↗</span>
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function App() {
+  const [initial] = useState(() => {
+    try {
+      return { store: loadStore(), error: "" };
+    } catch {
+      return {
+        store: emptyStore,
+        error:
+          "Saved browser data could not be read. It has been left untouched. Export or recover it before making changes.",
+      };
+    }
+  });
+  const [store, setStore] = useState<Store>(initial.store),
+    [storageError, setStorageError] = useState(initial.error);
+  const [session, setSession] = useState<Session | null>(null),
+    [localMode, setLocalMode] = useState(false);
+  const [view, setView] = useState<View>("Todo"),
+    [editor, setEditor] = useState<Entry | null>(null),
+    [settings, setSettings] = useState(false);
+  const [search, setSearch] = useState(""),
+    [person, setPerson] = useState(""),
+    [showDone, setShowDone] = useState(false);
+  const [notice, setNotice] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  const [syncFailures, setSyncFailures] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [calendarAnchor, setCalendarAnchor] = useState(() =>
+    dateKey(new Date()),
+  );
+  const [calendarPeriod, setCalendarPeriod] = useState<TimeWindow>("All");
+  const [todoPeriod, setTodoPeriod] = useState<Period | "All">("All");
+  const [selectedDay, setSelectedDay] = useState(dateKey(new Date()));
+  const [connection, setConnection] = useState(store.connection);
+  const stateRef = useRef(store),
+    busyRef = useRef(false);
+  stateRef.current = store;
+  const [today, setToday] = useState(() => dateKey(new Date()));
+  const unlocked = !!session || localMode;
+  useEffect(() => {
+    const refreshDate = () => setToday(dateKey(new Date()));
+    const timer = window.setInterval(refreshDate, 60000);
+    window.addEventListener("focus", refreshDate);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refreshDate);
+    };
+  }, []);
+  useEffect(() => {
+    if (!session) return;
+    const timer = window.setTimeout(
+      () => {
+        setSession(null);
+        setError("Your Google session expired. Sign in again to continue.");
+        setNotice("");
+      },
+      Math.max(0, session.expiresAt - Date.now() - 10000),
+    );
+    return () => clearTimeout(timer);
+  }, [session]);
+  useEffect(() => {
+    if (!session || !store.dirty || busy || syncing || storageError) return;
+    const timer = window.setTimeout(
+      () => {
+        void sync(false, true);
+      },
+      syncFailures
+        ? Math.min(30000, 1000 * 2 ** Math.min(syncFailures, 5))
+        : 1000,
+    );
+    return () => clearTimeout(timer);
+  }, [
+    session,
+    store.entries,
+    store.dirty,
+    busy,
+    syncing,
+    storageError,
+    syncFailures,
+  ]);
+  useEffect(() => {
+    if (!session || storageError) return;
+    const refresh = () => {
+      if (!busyRef.current && !stateRef.current.dirty) void sync(false, true);
+    };
+    const reconnect = () => {
+      if (!busyRef.current) void sync(false, true);
+    };
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener("online", reconnect);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("online", reconnect);
+    };
+  }, [session, storageError]);
+  function commit(next: Store): boolean {
+    if (storageError) {
+      setError(storageError);
+      return false;
+    }
+    try {
+      saveStore(next);
+      stateRef.current = next;
+      setStore(next);
+      return true;
+    } catch {
+      setError(
+        "Browser storage is full or unavailable. Your change was not saved. Export a backup before continuing.",
+      );
+      return false;
+    }
+  }
+  function change(entries: Entry[]) {
+    return commit({ ...stateRef.current, entries, dirty: true });
+  }
+  async function signIn() {
+    if (busyRef.current) return;
+    setError("");
+    setNotice("");
+    if (!validEndpoint(store.connection.url)) {
+      setError(
+        "Add your Apps Script URL and Google client ID in Settings first.",
+      );
+      setSettings(true);
+      return;
+    }
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const auth = await login(store.connection.clientId);
+      const data = await request(store.connection, auth.token, "read");
+      setSession({ ...auth, ...data.user });
+      setLocalMode(false);
+      const current = stateRef.current;
+      const merged = current.dirty
+        ? mergeEntries(current.baseEntries, current.entries, data.entries)
+        : { entries: data.entries, conflicts: 0 };
+      commit({
+        ...current,
+        entries: merged.entries,
+        baseEntries: data.entries,
+        revision: data.revision,
+        lastSync: new Date().toISOString(),
+      });
+      setSyncFailures(0);
+      if (merged.conflicts)
+        setNotice(
+          "Concurrent versions were preserved as separate entries during automatic merge.",
+        );
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+  async function sync(reload = false, automatic = false) {
+    if (!session || busyRef.current) return;
+    busyRef.current = true;
+    setSyncing(true);
+    if (!automatic) {
+      setError("");
+      setNotice("");
+    }
+    try {
+      const current = stateRef.current;
+      const read = () => request(current.connection, session.token, "read");
+      const data = reload
+        ? { ...(await read()), conflicts: 0 }
+        : await synchronize(current, read, (revision, entries) =>
+            request(
+              current.connection,
+              session.token,
+              "write",
+              revision,
+              entries,
+            ),
+          );
+      const latest = stateRef.current;
+      // An editor can save while the network request is in flight. Rebase those
+      // new edits on the acknowledged snapshot and schedule another upload.
+      const changedDuringSync =
+        JSON.stringify(latest.entries) !== JSON.stringify(current.entries);
+      const rebased = changedDuringSync
+        ? mergeEntries(current.entries, latest.entries, data.entries)
+        : { entries: data.entries, conflicts: 0 };
+      if (
+        commit({
+          ...latest,
+          entries: rebased.entries,
+          baseEntries: data.entries,
+          revision: data.revision,
+          dirty: changedDuringSync,
+          lastSync: new Date().toISOString(),
+        })
+      ) {
+        setSyncFailures(0);
+        setError("");
+        if (data.conflicts + rebased.conflicts)
+          setNotice(
+            "Changes merged automatically. Concurrent versions were preserved as separate entries; dependency cycles were removed if needed.",
+          );
+        else if (!automatic) setNotice("Everything is up to date.");
+        else if (current.dirty)
+          setNotice(
+            changedDuringSync
+              ? "Changes saved. Syncing newer edits…"
+              : "Changes saved to Google Sheets.",
+          );
+      } else setSyncFailures((n) => n + 1);
+    } catch (e) {
+      setError(message(e));
+      setSyncFailures((n) => n + 1);
+    } finally {
+      busyRef.current = false;
+      setSyncing(false);
+    }
+  }
+  function saveEntry(entry: Entry) {
+    const current = stateRef.current.entries;
+    // Preserve remote changes received while this editor was open.
+    const base = editor?.note.trim()
+      ? [...current.filter((e) => e.id !== entry.id), editor]
+      : current;
+    const merged = mergeEntries(
+      base,
+      [...current.filter((e) => e.id !== entry.id), entry],
+      current,
+    );
+    if (change(merged.entries)) {
+      setEditor(null);
+      setNotice(
+        merged.conflicts
+          ? "Concurrent versions were preserved as separate entries."
+          : session
+            ? "Entry saved. Syncing automatically…"
+            : "Entry saved on this device.",
+      );
+      setError("");
+    }
+  }
+  function remove(entry: Entry) {
+    if (
+      !confirm(
+        `Delete “${entry.note.slice(0, 80)}”? Links to this entry will also be removed.`,
+      )
+    )
+      return;
+    change(
+      store.entries
+        .filter((e) => e.id !== entry.id)
+        .map((e) => ({
+          ...e,
+          requires: e.requires.filter((id) => id !== entry.id),
+          budgetId: e.budgetId === entry.id ? "" : e.budgetId,
+        })),
+    );
+  }
+  function toggle(entry: Entry, date?: string) {
+    const done = isDone(entry, date);
+    if (!done) {
+      const blocked = entry.requires
+        .map((id) => store.entries.find((e) => e.id === id))
+        .find((e) => e && !requirementDone(e, date || today));
+      if (blocked) {
+        setError(`Complete “${blocked.note}” first.`);
+        return;
+      }
+    }
+    const updated = {
+      ...entry,
+      updatedAt: new Date().toISOString(),
+      ...(entry.repeat && date
+        ? {
+            completedDates: done
+              ? entry.completedDates.filter((d) => d !== date)
+              : [...entry.completedDates, date],
+          }
+        : { completed: !done }),
+    };
+    change(store.entries.map((e) => (e.id === entry.id ? updated : e)));
+    setError("");
+  }
+  function exportData() {
+    const blob = new Blob(
+      [JSON.stringify({ version: 1, entries: store.entries }, null, 2)],
+      { type: "application/json" },
+    );
+    const url = URL.createObjectURL(blob),
+      a = document.createElement("a");
+    a.href = url;
+    a.download = `brain-${today}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function importData(file?: File) {
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text()),
+        incoming = decodeEntries(Array.isArray(data) ? data : data.entries);
+      if (
+        !confirm(
+          `Merge ${incoming.length} entries into this device? Imported entries replace existing entries with the same ID. Sync will upload the result.`,
+        )
+      )
+        return;
+      const merged = [
+        ...stateRef.current.entries.filter(
+          (e) => !incoming.some((x) => x.id === e.id),
+        ),
+        ...incoming,
+      ];
+      decodeEntries(merged);
+      if (change(merged)) setNotice("Backup imported on this device.");
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+  const people = [...new Set(store.entries.flatMap((e) => e.who))].sort();
+  const filtered = store.entries.filter(
+    (e) =>
+      (!search || e.note.toLowerCase().includes(search.toLowerCase())) &&
+      (!person || e.who.includes(person)),
+  );
+  const todoItems = todoOccurrences(filtered, today, todoPeriod, showDone);
+  const pending = store.entries.filter(
+    (e) => e.task && (e.repeat || !e.completed),
+  ).length;
+  const upcoming = store.entries.filter(
+    (e) => occurrences(e, today, addDays(today, 6)).length > 0,
+  ).length;
+  const calendarRange = periodRange(
+    calendarPeriod === "All" ? "This Month" : calendarPeriod,
+    calendarAnchor,
+  );
+  const allCalendarEntries = filtered
+    .filter((e) => e.beginsOn || e.endsOn)
+    .sort((a, b) =>
+      (a.beginsOn || a.endsOn).localeCompare(b.beginsOn || b.endsOn),
+    );
+  const calendarLayout = periodKind(
+    calendarPeriod === "All" ? "This Month" : calendarPeriod,
+  );
+  const calendarStart =
+    calendarLayout === "This Month"
+      ? addDays(calendarRange.from, -parseDate(calendarRange.from).getDay())
+      : calendarRange.from;
+  const calendarDays =
+    calendarLayout === "This Month"
+      ? 42
+      : calendarLayout === "This Week"
+        ? 7
+        : 1;
+  const calendarItems = filtered
+    .flatMap((e) =>
+      occurrences(e, calendarStart, addDays(calendarStart, calendarDays - 1)),
+    )
+    .sort(
+      (a, b) =>
+        (a.entry.beginsAt || a.entry.endsAt).localeCompare(
+          b.entry.beginsAt || b.entry.endsAt,
+        ) || a.entry.note.localeCompare(b.entry.note),
+    );
+  function selectCalendarPeriod(period: TimeWindow) {
+    setCalendarPeriod(period);
+    setCalendarAnchor(today);
+    const range = periodRange(period === "All" ? "This Month" : period, today);
+    setSelectedDay(
+      today >= range.from && today <= range.to ? today : range.from,
+    );
+  }
+  function moveCalendar(direction: number) {
+    if (calendarPeriod === "All") return;
+    const anchor = shiftPeriod(calendarPeriod, calendarAnchor, direction);
+    setCalendarAnchor(anchor);
+    setSelectedDay(periodRange(calendarPeriod, anchor).from);
+  }
+  const planned = filtered.filter((e) => e.budgetType),
+    transactions = filtered.filter((e) => e.transactionType);
+  const total = (entries: Entry[], type: string, planned = false) =>
+    entries
+      .filter((e) => (planned ? e.budgetType : e.transactionType) === type)
+      .reduce((n, e) => n + e.amount, 0);
+  function row(e: Entry, date?: string, end?: string, highlight?: string) {
+    const due =
+        end ??
+        (e.repeat && date
+          ? addDays(
+              date,
+              e.beginsOn && e.endsOn ? daysBetween(e.beginsOn, e.endsOn) : 0,
+            )
+          : e.endsOn || e.beginsOn),
+      done = isDone(e, date),
+      parent = store.entries.find((x) => x.id === e.budgetId);
+    return (
+      <article
+        className={`entry-row ${done ? "done" : ""}`}
+        key={`${e.id}:${date || ""}`}
+      >
+        {e.task ? (
+          <button
+            className={`task-check ${done ? "checked" : ""}`}
+            aria-label={`${done ? "Reopen" : "Complete"} ${e.note}`}
+            disabled={busy}
+            onClick={() => toggle(e, date)}
+          >
+            {done ? "✓" : ""}
+          </button>
+        ) : (
+          <span
+            className={`entry-icon ${e.budgetType || e.transactionType ? "financial" : ""}`}
+          >
+            {e.budgetType || e.transactionType
+              ? "$"
+              : e.beginsOn || e.endsOn
+                ? "▦"
+                : "≡"}
+          </span>
+        )}
+        <button
+          className="entry-content"
+          onClick={() => setEditor(e)}
+          disabled={busy}
+        >
+          <strong>{e.note}</strong>
+          <span className="entry-meta">
+            {highlight && <span className="upcoming-pill">{highlight}</span>}
+            {e.who.map((p) => (
+              <span key={p} className="person-pill">
+                {p}
+              </span>
+            ))}
+            {e.repeat && <span>↻ {e.repeat}</span>}
+            {e.requires.length > 0 && (
+              <span>↳ {e.requires.length} required</span>
+            )}
+            {parent && <span>↗ {parent.note}</span>}
+            {!e.task &&
+              !e.beginsOn &&
+              !e.endsOn &&
+              !e.repeat &&
+              !e.who.length &&
+              !e.budgetType &&
+              !e.transactionType && <span>Note</span>}
+          </span>
+        </button>
+        {(e.budgetType || e.transactionType) && (
+          <span
+            className={`amount ${(e.budgetType || e.transactionType) === "income" ? "positive" : ""}`}
+          >
+            {money(e.amount)}
+          </span>
+        )}
+        {due && (
+          <span
+            className={`due ${e.task && due < today && !done ? "overdue" : ""}`}
+          >
+            <time dateTime={due}>
+              {view === "Todo"
+                ? formatDate(due, true)
+                : due === today
+                  ? "Today"
+                  : formatDate(due)}
+            </time>
+            {view === "Todo" && due === today && <small>Today</small>}
+            {(e.endsAt || e.beginsAt) && (
+              <small>{e.endsAt || e.beginsAt}</small>
+            )}
+          </span>
+        )}
+        <button
+          className="delete-button"
+          aria-label={`Delete ${e.note}`}
+          disabled={busy}
+          onClick={() => remove(e)}
+        >
+          ×
+        </button>
+      </article>
+    );
+  }
+  function empty(title: string, description: string) {
+    return (
+      <div className="empty">
+        <h3>{title}</h3>
+        <p>{description}</p>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => setEditor(blankEntry())}
+        >
+          + Add an entry
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <a className="brand" href="#" onClick={() => setView("Todo")}>
+          Brain
+        </a>
+        <nav aria-label="Main navigation">
+          {(["Inbox", "Todo", "Calendar", "Budget"] as const).map((v) => (
+            <button
+              key={v}
+              className={view === v ? "active" : ""}
+              disabled={v === "Inbox" && (!unlocked || busy)}
+              aria-haspopup={v === "Inbox" ? "dialog" : undefined}
+              onClick={() =>
+                v === "Inbox" ? setEditor(blankEntry()) : setView(v)
+              }
+            >
+              <span className="nav-icon">{icons[v]}</span>
+              {v}
+              {unlocked && v === "Todo" && pending > 0 && (
+                <span className="nav-count">{pending}</span>
+              )}
+              {view === v && <span className="active-dot">●</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <button
+            onClick={() => {
+              setConnection(store.connection);
+              setSettings(true);
+            }}
+          >
+            ⚙ <span>Settings & connections</span>
+          </button>
+          {session && (
+            <div className="account">
+              <span className="avatar">{session.name.charAt(0)}</span>
+              <div>
+                <strong>{session.name}</strong>
+                <small>{session.email}</small>
+              </div>
+              <button
+                aria-label="Sign out"
+                disabled={busy || syncing}
+                onClick={() => {
+                  logout(session.token);
+                  setSession(null);
+                  setLocalMode(false);
+                  setNotice("");
+                  setError("");
+                }}
+              >
+                ↪
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+      <main>
+        <header className="topbar">
+          <div className="today-context">
+            <span>Today</span>
+            <time dateTime={today}>
+              {parseDate(today).toLocaleDateString(undefined, {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </time>
+          </div>
+          <div className="topbar-actions">
+            <span className="status-dot" />
+            {session
+              ? store.dirty
+                ? "Waiting to sync"
+                : "Connected to Google"
+              : localMode
+                ? "Local workspace"
+                : "Not signed in"}
+            {session && (
+              <button
+                className="sync-button"
+                onClick={() => sync()}
+                disabled={busy || syncing}
+              >
+                {busy || syncing ? "Syncing…" : "↻ Sync now"}
+              </button>
+            )}
+          </div>
+        </header>
+        <div className="main-content">
+          {error && (
+            <div className="banner error" role="alert">
+              {error}
+              <button aria-label="Dismiss error" onClick={() => setError("")}>
+                ×
+              </button>
+            </div>
+          )}
+          {notice && (
+            <div className="banner success" role="status">
+              {notice}
+              <button
+                aria-label="Dismiss notification"
+                onClick={() => setNotice("")}
+              >
+                ×
+              </button>
+            </div>
+          )}
+          {!unlocked ? (
+            <section className="welcome">
+              <h1>Sign in</h1>
+              <p>Use your Google account to access shared entries.</p>
+              <button
+                className="google-button"
+                onClick={signIn}
+                disabled={busy}
+              >
+                <b>G</b>
+                {busy ? "Connecting…" : "Continue with Google"}
+              </button>
+              <small>
+                Only accounts on your family’s whitelist can connect.
+              </small>
+              <button
+                className="text-button"
+                onClick={() => {
+                  setConnection(store.connection);
+                  setSettings(true);
+                }}
+              >
+                Set up your connection →
+              </button>
+              {!store.connection.url && (
+                <button
+                  className="text-button muted"
+                  onClick={() => setLocalMode(true)}
+                >
+                  Use local workspace
+                </button>
+              )}
+            </section>
+          ) : (
+            <>
+              <section className="page-heading">
+                <div>
+                  <h1>{view}</h1>
+                </div>
+                <button
+                  className="primary"
+                  disabled={busy}
+                  onClick={() =>
+                    setEditor({
+                      ...blankEntry(),
+                      task: view === "Todo",
+                      ...(view === "Calendar" ? { beginsOn: selectedDay } : {}),
+                    })
+                  }
+                >
+                  + <span>Add entry</span>
+                </button>
+              </section>
+              {localMode && (
+                <div className="local-banner">
+                  <span>
+                    ◉ Local workspace · Your entries stay in this browser until
+                    you connect.
+                  </span>
+                  <button onClick={signIn} disabled={busy}>
+                    Connect Google →
+                  </button>
+                </div>
+              )}
+              <section className="stats-grid">
+                <div className="stat">
+                  <div>
+                    <span>Total entries</span>
+                    <strong>{store.entries.length}</strong>
+                  </div>
+                </div>
+                <div className="stat">
+                  <div>
+                    <span>Open tasks</span>
+                    <strong>{pending}</strong>
+                  </div>
+                </div>
+                <div className="stat">
+                  <div>
+                    <span>Next 7 days</span>
+                    <strong>{upcoming}</strong>
+                  </div>
+                </div>
+              </section>
+              <div className="workspace-toolbar">
+                <div className="view-label">
+                  <span>{icons[view]}</span>
+                  <h2>
+                    {view === "Todo"
+                      ? "Tasks & coming up"
+                      : view === "Calendar"
+                        ? calendarPeriod === "All"
+                          ? "All dated entries"
+                          : parseDate(calendarRange.from).toLocaleDateString(
+                              undefined,
+                              {
+                                month: "long",
+                                year: "numeric",
+                              },
+                            )
+                        : "All-time overview"}
+                  </h2>
+                </div>
+                <div className="filters">
+                  <label className="search">
+                    <span>⌕</span>
+                    <input
+                      aria-label="Search entries"
+                      placeholder="Find an entry…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </label>
+                  <select
+                    aria-label="Filter by person"
+                    value={person}
+                    onChange={(e) => setPerson(e.target.value)}
+                  >
+                    <option value="">Everyone</option>
+                    {people.map((p) => (
+                      <option key={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {view === "Todo" && (
+                <>
+                  <div className="range-toolbar">
+                    <TimeWindowFilter
+                      label="Todo"
+                      value={todoPeriod}
+                      onChange={setTodoPeriod}
+                    />
+                    <span>
+                      {todoPeriod === "All"
+                        ? "All tasks and upcoming dates"
+                        : `${formatDate(periodRange(todoPeriod, today).from)} – ${formatDate(periodRange(todoPeriod, today).to)}`}
+                    </span>
+                  </div>
+                  <div className="list-subheader">
+                    <span>
+                      {todoPeriod === "All"
+                        ? "Includes undated and overdue tasks. Requirements appear first."
+                        : "Entries overlapping this period. View everything to include undated tasks and older overdue tasks."}
+                    </span>
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        checked={showDone}
+                        onChange={(e) => setShowDone(e.target.checked)}
+                      />{" "}
+                      Show completed
+                    </label>
+                  </div>
+                  <section className="entry-list">
+                    {todoItems.length
+                      ? todoItems.map((o) =>
+                          row(
+                            o.entry,
+                            o.date,
+                            o.end || o.start,
+                            occurrenceHighlight(o, today),
+                          ),
+                        )
+                      : empty(
+                          "No matching entries",
+                          "No tasks or upcoming dates match this view.",
+                        )}
+                  </section>
+                </>
+              )}
+              {view === "Calendar" && (
+                <>
+                  <div className="range-toolbar">
+                    <TimeWindowFilter
+                      label="Calendar"
+                      value={calendarPeriod}
+                      onChange={selectCalendarPeriod}
+                    />
+                    {calendarPeriod !== "All" && (
+                      <span>
+                        {formatDate(calendarRange.from)} –{" "}
+                        {formatDate(calendarRange.to)}
+                      </span>
+                    )}
+                  </div>
+                  {calendarPeriod === "All" ? (
+                    <>
+                      <p className="hint calendar-all-hint">
+                        All dated entries. Repeating entries are listed once
+                        using their original dates.
+                      </p>
+                      <section className="entry-list">
+                        {allCalendarEntries.length ? (
+                          allCalendarEntries.map((e) =>
+                            row(e, e.beginsOn || e.endsOn),
+                          )
+                        ) : (
+                          <div className="quiet-empty">No dated entries.</div>
+                        )}
+                      </section>
+                    </>
+                  ) : (
+                    <>
+                      <div className="calendar-controls">
+                        <p>
+                          {calendarLayout === "Today"
+                            ? "Your day at a glance, including ongoing entries."
+                            : "Repeating and multi-day entries appear on each relevant day."}
+                        </p>
+                        <div>
+                          <button
+                            className="secondary"
+                            onClick={() => selectCalendarPeriod(calendarLayout)}
+                          >
+                            Back to now
+                          </button>
+                          <button
+                            aria-label="Previous period"
+                            className="icon-button"
+                            disabled={calendarRange.from <= "1900-01-01"}
+                            onClick={() => moveCalendar(-1)}
+                          >
+                            &lsaquo;
+                          </button>
+                          <button
+                            aria-label="Next period"
+                            className="icon-button"
+                            disabled={calendarRange.to >= "2200-12-31"}
+                            onClick={() => moveCalendar(1)}
+                          >
+                            &rsaquo;
+                          </button>
+                        </div>
+                      </div>
+                      {calendarLayout !== "Today" && (
+                        <section
+                          className={`calendar ${calendarLayout === "This Week" ? "week-calendar" : ""}`}
+                        >
+                          <div className="weekdays">
+                            {[
+                              "Sun",
+                              "Mon",
+                              "Tue",
+                              "Wed",
+                              "Thu",
+                              "Fri",
+                              "Sat",
+                            ].map((d) => (
+                              <span key={d}>{d}</span>
+                            ))}
+                          </div>
+                          <div className="calendar-grid">
+                            {Array.from({ length: calendarDays }, (_, i) => {
+                              const day = addDays(calendarStart, i),
+                                items = calendarItems.filter(
+                                  (o) => o.start <= day && o.end >= day,
+                                );
+                              return (
+                                <button
+                                  key={day}
+                                  aria-label={`${day}, ${items.length} entries`}
+                                  aria-pressed={day === selectedDay}
+                                  className={`calendar-day ${day < calendarRange.from || day > calendarRange.to ? "outside" : ""} ${day === selectedDay ? "selected" : ""}`}
+                                  onClick={() => setSelectedDay(day)}
+                                >
+                                  <span
+                                    className={day === today ? "today" : ""}
+                                  >
+                                    {parseDate(day).getDate()}
+                                  </span>
+                                  {items
+                                    .slice(
+                                      0,
+                                      calendarLayout === "This Week" ? 4 : 2,
+                                    )
+                                    .map((o) => (
+                                      <small
+                                        key={o.key}
+                                        className={
+                                          isDone(o.entry, o.date)
+                                            ? "completed-event"
+                                            : ""
+                                        }
+                                      >
+                                        {o.entry.note}
+                                      </small>
+                                    ))}
+                                  {items.length >
+                                    (calendarLayout === "This Week"
+                                      ? 4
+                                      : 2) && (
+                                    <em>
+                                      +
+                                      {items.length -
+                                        (calendarLayout === "This Week"
+                                          ? 4
+                                          : 2)}{" "}
+                                      more
+                                    </em>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      )}
+                      {calendarLayout === "This Week" ? (
+                        <section
+                          className="week-agenda"
+                          aria-label="Week agenda"
+                        >
+                          {Array.from({ length: 7 }, (_, i) => {
+                            const day = addDays(calendarRange.from, i),
+                              items = calendarItems.filter(
+                                (o) => o.start <= day && o.end >= day,
+                              );
+                            return (
+                              <div
+                                key={day}
+                                className={`agenda-day ${day === today ? "agenda-today" : ""}`}
+                              >
+                                <h3 className="day-title">
+                                  {parseDate(day).toLocaleDateString(
+                                    undefined,
+                                    {
+                                      weekday: "long",
+                                      month: "short",
+                                      day: "numeric",
+                                    },
+                                  )}
+                                  {day === today && (
+                                    <span className="upcoming-pill">Today</span>
+                                  )}
+                                  <span className="count">{items.length}</span>
+                                </h3>
+                                <div className="entry-list">
+                                  {items.length ? (
+                                    items.map((o) =>
+                                      row(
+                                        o.entry,
+                                        o.date,
+                                        o.end,
+                                        occurrenceHighlight(o, today),
+                                      ),
+                                    )
+                                  ) : (
+                                    <div className="quiet-empty">
+                                      Nothing planned.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </section>
+                      ) : (
+                        <>
+                          <h3 className="day-title">
+                            {parseDate(
+                              calendarLayout === "Today"
+                                ? calendarRange.from
+                                : selectedDay,
+                            ).toLocaleDateString(undefined, {
+                              weekday: "long",
+                              month: "long",
+                              day: "numeric",
+                            })}
+                          </h3>
+                          <section className="entry-list">
+                            {calendarItems.filter(
+                              (o) =>
+                                o.start <=
+                                  (calendarLayout === "Today"
+                                    ? calendarRange.from
+                                    : selectedDay) &&
+                                o.end >=
+                                  (calendarLayout === "Today"
+                                    ? calendarRange.from
+                                    : selectedDay),
+                            ).length ? (
+                              calendarItems
+                                .filter(
+                                  (o) =>
+                                    o.start <=
+                                      (calendarLayout === "Today"
+                                        ? calendarRange.from
+                                        : selectedDay) &&
+                                    o.end >=
+                                      (calendarLayout === "Today"
+                                        ? calendarRange.from
+                                        : selectedDay),
+                                )
+                                .map((o) =>
+                                  row(
+                                    o.entry,
+                                    o.date,
+                                    o.end,
+                                    occurrenceHighlight(o, today),
+                                  ),
+                                )
+                            ) : (
+                              <div className="quiet-empty">
+                                No entries for this date.
+                              </div>
+                            )}
+                          </section>
+                        </>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+              {view === "Budget" && (
+                <>
+                  <div className="money-summary">
+                    <div>
+                      <span>Planned income</span>
+                      <strong>{money(total(planned, "income", true))}</strong>
+                    </div>
+                    <div>
+                      <span>Planned expenses</span>
+                      <strong>{money(total(planned, "expense", true))}</strong>
+                    </div>
+                    <div>
+                      <span>Actual balance</span>
+                      <strong>
+                        {money(
+                          total(transactions, "income") -
+                            total(transactions, "expense"),
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+                  <p className="budget-note">
+                    All-time totals in USD. Each stored plan or transaction is
+                    counted once; repeating dates do not create financial
+                    transactions.
+                  </p>
+                  <h3 className="day-title">
+                    The plan{" "}
+                    <span className="muted">· {planned.length} items</span>
+                  </h3>
+                  <section className="entry-list">
+                    {planned.length
+                      ? planned.map((e) => (
+                          <div key={e.id}>
+                            {row(e)}
+                            <div className="budget-progress">
+                              <span>
+                                Actual linked {e.budgetType}:{" "}
+                                {money(
+                                  transactions
+                                    .filter((t) => t.budgetId === e.id)
+                                    .reduce((n, t) => n + t.amount, 0),
+                                )}
+                              </span>
+                              <span>Planned: {money(e.amount)}</span>
+                            </div>
+                          </div>
+                        ))
+                      : empty(
+                          "No budget items",
+                          "Add planned income and expenses, then link actual transactions.",
+                        )}
+                  </section>
+                  <h3 className="day-title">
+                    Actual transactions{" "}
+                    <span className="muted">· {transactions.length} items</span>
+                  </h3>
+                  <section className="entry-list">
+                    {transactions.length ? (
+                      transactions.map((e) => row(e))
+                    ) : (
+                      <div className="quiet-empty">
+                        Actual income and expenses will appear here.
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
+              <footer>
+                <span>
+                  {store.lastSync
+                    ? `Last synced ${new Date(store.lastSync).toLocaleString()}`
+                    : "Not synced yet"}
+                </span>
+              </footer>
+            </>
+          )}
+        </div>
+      </main>
+      {editor && (
+        <Editor
+          entry={editor}
+          entries={store.entries}
+          save={saveEntry}
+          close={() => setEditor(null)}
+        />
+      )}
+      {settings && (
+        <Modal title="Settings" close={() => setSettings(false)}>
+          <div className="settings">
+            <p>
+              Connect your family’s Google Sheet. Apps Script verifies your
+              Google account and checks the backend whitelist on every request.
+            </p>
+            <label>
+              Google OAuth client ID
+              <input
+                value={connection.clientId}
+                onChange={(e) =>
+                  setConnection((c) => ({
+                    ...c,
+                    clientId: e.target.value.trim(),
+                  }))
+                }
+                placeholder="….apps.googleusercontent.com"
+              />
+            </label>
+            <label>
+              Apps Script web app URL
+              <input
+                type="url"
+                value={connection.url}
+                onChange={(e) =>
+                  setConnection((c) => ({ ...c, url: e.target.value.trim() }))
+                }
+                placeholder="https://script.google.com/macros/s/…/exec"
+              />
+            </label>
+            <p className="hint">
+              See README.md for Google OAuth, whitelist, and deployment setup.
+              These two configuration values are public identifiers.
+            </p>
+            <button
+              className="primary"
+              disabled={busy || syncing}
+              onClick={() => {
+                if (connection.url && !validEndpoint(connection.url)) {
+                  setError("Use a valid Apps Script /exec deployment URL.");
+                  return;
+                }
+                const changed = connection.url !== store.connection.url;
+                if (
+                  changed &&
+                  store.dirty &&
+                  !confirm(
+                    "Changing the backend will reset the shared revision. Export unsynced local entries before continuing. Continue?",
+                  )
+                )
+                  return;
+                if (
+                  commit({
+                    ...store,
+                    connection,
+                    revision: changed ? null : store.revision,
+                    baseEntries: changed ? null : store.baseEntries,
+                  })
+                ) {
+                  if (session) logout(session.token);
+                  setSession(null);
+                  setSettings(false);
+                  setNotice(
+                    "Connection saved. Continue with Google to sign in.",
+                  );
+                }
+              }}
+            >
+              Save connection
+            </button>
+            {session && (
+              <button
+                className="secondary"
+                disabled={busy || syncing}
+                onClick={() => {
+                  if (
+                    !store.dirty ||
+                    confirm(
+                      "Replace local entries with the Sheet version? Export a backup first if you want to keep local changes.",
+                    )
+                  ) {
+                    void sync(true);
+                    setSettings(false);
+                  }
+                }}
+              >
+                Load Sheet version
+              </button>
+            )}
+            {unlocked && (
+              <>
+                <hr />
+                <h3>Your data</h3>
+                <button className="secondary" onClick={exportData}>
+                  ↓ Export JSON backup
+                </button>
+                <label className="file-label">
+                  ↑ Import JSON backup
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    disabled={busy}
+                    onChange={(e) => {
+                      void importData(e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </>
+            )}
+            {storageError && (
+              <div className="error">
+                <p>{storageError}</p>
+                <button
+                  onClick={() => {
+                    const raw = localStorage.getItem("brain-family-v1");
+                    const a = document.createElement("a");
+                    const url = URL.createObjectURL(
+                      new Blob([raw || ""], { type: "application/json" }),
+                    );
+                    a.href = url;
+                    a.download = "brain-recovery.json";
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  }}
+                >
+                  Download raw recovery data
+                </button>
+                <button
+                  onClick={() => {
+                    if (
+                      confirm(
+                        "Reset the unreadable browser data? Download the recovery file first.",
+                      )
+                    ) {
+                      localStorage.removeItem("brain-family-v1");
+                      setStorageError("");
+                      setStore(emptyStore);
+                    }
+                  }}
+                >
+                  Reset browser data
+                </button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+export default App;
