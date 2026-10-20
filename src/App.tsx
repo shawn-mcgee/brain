@@ -39,6 +39,8 @@ import {renameThoughtGroup} from './thought-groups';
 import Checklist from './Checklist';
 import {setTaskDone} from './checklist-model';
 import {actualEntryChanges,sameValue} from './entry-changes';
+import Pinned from './Pinned';
+import LocationLinks from './LocationLinks';
 import Board from './Board';
 import type { BoardItem } from './board-model';
 import { mergeItems, decodeBoardViews } from './board-model';
@@ -46,7 +48,7 @@ import { uploadPendingFiles } from './files';
 import { login, logout } from "./auth";
 import type { Session } from "./auth";
 import { mergeEntries, synchronize } from "./sync";
-import { taskParticles, taskTheme } from "./personality";
+import { taskParticles, taskCompletionKind, taskCompletionGlyph } from "./personality";
 import TaskCelebration from "./TaskCelebration";
 import type { Celebration } from "./TaskCelebration";
 import SignInCharacter from "./SignInCharacter";
@@ -73,10 +75,11 @@ import {
 import type { EntrySection as Section } from "./entry-sections";
 import "./App.css";
 
-type View = "Inbox" | "Todo" | "Calendar" | "Budget" | "Board" | "Thoughts";
+type View = "Inbox" | "Pinned" | "Todo" | "Calendar" | "Budget" | "Board" | "Thoughts";
 const icons: Record<string, string> = {
+  Pinned: '\u{1F4CC}',
   Thoughts: "\u{1F4AD}",
-  Board: "📌",
+  Board: "\u{1F441}\uFE0F",
   Inbox: "📥",
   Todo: "✅",
   Calendar: "📅",
@@ -193,6 +196,7 @@ function Editor({
   token,
   presetSections=[],
   onCopy,
+  onDelete,
   initialAmount,
   replacingFuture=false,
 }: {
@@ -205,6 +209,7 @@ function Editor({
   token?: string;
   presetSections?:Section[];
   onCopy?:(entry:Entry)=>void;
+  onDelete?:(entry:Entry)=>void;
   initialAmount?:string;
   replacingFuture?:boolean;
 }) {
@@ -301,10 +306,11 @@ function Editor({
       </>
     ),
     who: <AttributeInput label="Who" multiple value={draft.who} options={[...new Set(entries.flatMap(e=>e.who))].sort()} onChange={value=>update({who:[...new Set(value.split(',').map(v=>v.trim()).filter(Boolean))]})}/>,
-    where: <AttributeInput label="Where" value={draft.where} options={[...new Set(entries.map(e=>e.where).filter(Boolean))].sort()} onChange={where=>update({where})}/>,
+    where: <><AttributeInput label="Where" value={draft.where} options={[...new Set(entries.map(e=>e.where).filter(Boolean))].sort()} onChange={where=>update({where})}/><LocationLinks where={draft.where}/></>,
     group: <AttributeInput label="Group" value={draft.group} options={[...new Set(entries.map(e=>e.group).filter(Boolean))].sort()} onChange={group=>update({group})}/>,
     tags: <AttributeInput label="Tags" multiple value={draft.tags} options={[...new Set(entries.flatMap(e=>e.tags))].sort()} onChange={value=>update({tags:[...new Set(value.split(',').map(v=>v.trim()).filter(Boolean))]})}/>,
     color: <div className="item-color-options" role="group" aria-label="Thought color"><button type="button" className="item-color-automatic" aria-pressed={!draft.color} onClick={()=>update({color:''})}>Automatic</button>{boardColors.map(color=><button key={color} type="button" className={`item-color-swatch board-${color}`} aria-label={color} title={color} aria-pressed={draft.color===color} onClick={()=>update({color})}>{draft.color===color&&<span aria-hidden="true">✓</span>}</button>)}</div>,
+    pin: null,
     task: null,
     when: (
       <div className="when-control">
@@ -329,12 +335,12 @@ function Editor({
         <div className="when-dates">
           <div className="when-endpoint">
             <label>
-              {isRange ? 'Start date' : 'Date'}
+              {isRange ? 'Start date' : draft.task ? 'Due date' : 'Date'}
               <input type="date" required min="1900-01-01" max="2200-12-31" value={draft.beginsOn}
                 onChange={event => update({beginsOn: event.target.value, ...(!isRange ? {endsOn: event.target.value} : {})})} />
             </label>
             <label>
-              <span className="field-label">{isRange ? 'Start time' : 'Time'} <span className="field-optional">Optional</span></span>
+              <span className="field-label">{isRange ? 'Start time' : draft.task ? 'Due time' : 'Time'} <span className="field-optional">Optional</span></span>
               <input type="time" value={draft.beginsAt}
                 onChange={event => update({beginsAt: event.target.value, ...(!isRange ? {endsAt: event.target.value} : {})})} />
             </label>
@@ -504,12 +510,13 @@ function Editor({
                 type="button"
                 className="remove-section"
                 aria-label={`Remove ${sectionNames[section]} section`}
+                title={`Remove ${sectionNames[section]} section`}
                 onClick={(event) => {
                   event.stopPropagation();
                   removeSection(section);
                 }}
               >
-                <span aria-hidden="true">✖️</span> Remove
+                <span aria-hidden="true">✖️</span>
               </button>
             </summary>
             <div className="entry-section-fields"><p className="attribute-description">{sectionDescriptions[section]}</p>{fields[section]}</div>
@@ -548,13 +555,16 @@ function Editor({
       )}
       </div>
       <div className="modal-actions">
-        {onCopy&&entries.some(saved=>saved.id===entry.id)&&<button type="button" className="secondary" disabled={filesBusy} onClick={()=>onCopy(draft)}>Copy</button>}
+        {onDelete&&entries.some(saved=>saved.id===entry.id)&&<div className="thought-controls editor-delete-actions"><button type="button" className="delete-button" aria-label={`Delete ${entry.name}`} title="Delete thought" disabled={filesBusy} onClick={()=>onDelete(entry)}><span aria-hidden="true">{'\u{1F5D1}\uFE0F'}</span> Delete</button></div>}
+        <div className="editor-actions-right">
         <button type="button" className="secondary" onClick={close}>
           {embedded ? "Clear" : "Cancel"}
         </button>
+        {onCopy&&entries.some(saved=>saved.id===entry.id)&&<button type="button" className="secondary" disabled={filesBusy} onClick={()=>onCopy(draft)}><span aria-hidden="true">{'\u{1F5A8}\uFE0F'}</span> Copy</button>}
         <button className="primary" type="submit" disabled={filesBusy}>
-          Save <span aria-hidden="true">💾</span>
+          <span aria-hidden="true">💾</span> Save
         </button>
+        </div>
       </div>
     </form>
   );
@@ -599,6 +609,12 @@ function App() {
   const [view, setView] = useState<View>("Inbox"),
     [editor, setEditor] = useState<Entry | null>(null),
     [settings, setSettings] = useState(false);
+  useEffect(()=>{
+    const phone=window.matchMedia('(max-width: 600px)');
+    const update=()=>{if(phone.matches)setView(current=>current==='Board'?'Pinned':current);};
+    update();phone.addEventListener('change',update);return()=>phone.removeEventListener('change',update);
+  },[]);
+
   const [copyDraftId,setCopyDraftId]=useState('');
   const [copyChoice,setCopyChoice]=useState<{draft:Entry;source:Entry}|null>(null);
   const [futureReplacement,setFutureReplacement]=useState<{draftId:string;source:Entry}|null>(null);
@@ -704,14 +720,20 @@ function App() {
       return false;
     }
   }
-  function change(entries: Entry[]) {
+  function change(entries: Entry[], origin:HTMLElement|null=document.activeElement instanceof HTMLElement?document.activeElement:null) {
     const current=stateRef.current;
     entries=actualEntryChanges(current.entries,entries);
     if(entries===current.entries)return true;
     const saved=commit({ ...current, entries, dirty: true });
     if(saved){
-      const completed=entries.find(entry=>{const before=current.entries.find(old=>old.id===entry.id);return entry.task&&before&&(!entry.repeat?!before.completed&&entry.completed:!!entry.budgetType&&entry.completedDates.some(date=>!before.completedDates.includes(date)));});
+      const completed=entries.find(entry=>{const before=current.entries.find(old=>old.id===entry.id);return entry.task&&before&&(!entry.repeat?!before.completed&&entry.completed:entry.completedDates.some(date=>!before.completedDates.includes(date)));});
       if(completed&&(!completed.repeat||completed.budgetType))setCompletedTarget(completed);
+      if(completed&&origin&&origin!==document.body&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+        const before=current.entries.find(entry=>entry.id===completed.id)!;
+        const date=completed.repeat?completed.completedDates.find(date=>!before.completedDates.includes(date)):undefined;
+        const box=origin.getBoundingClientRect();
+        setCelebrations(current=>[...current.slice(-3),{id:crypto.randomUUID(),entryId:completed.id,kind:taskCompletionKind(completed),date,x:box.left+box.width/2,y:box.top+box.height/2,particles:taskParticles(completed)}]);
+      }
     }
     return saved;
   }
@@ -913,7 +935,7 @@ function App() {
   }
   function remove(entry:Entry){setDeleteTarget(entry);}
   function removeConfirmed(entry:Entry) {
-    change(
+    const saved=change(
       stateRef.current.entries
         .filter((e) => e.id !== entry.id)
         .map((e) => ({
@@ -922,6 +944,8 @@ function App() {
           budgetId: e.budgetId === entry.id ? "" : e.budgetId,
         })),
     );
+    if(saved&&editor?.id===entry.id){setEditor(null);setFutureReplacement(null);}
+    return saved;
   }
   function toggle(entry: Entry, date?: string, origin?: HTMLElement) {
     const done = isDone(entry, date);
@@ -935,26 +959,10 @@ function App() {
       }
     }
     const updated = setTaskDone(entry,!done,date);
-    if (change(store.entries.map((e) => (e.id === entry.id ? updated : e)))) {
+    if (change(store.entries.map((e) => (e.id === entry.id ? updated : e)),origin)) {
       setError("");
       setTaskFeedback(`${done ? "Reopened" : "Completed"}: ${entry.name}`);
-      if (
-        !done &&
-        origin &&
-        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      ) {
-        const box = origin.getBoundingClientRect();
-        const celebration: Celebration = {
-          id: crypto.randomUUID(),
-          entryId: entry.id,
-          money: taskTheme(entry) === "money",
-          date,
-          x: box.left + box.width / 2,
-          y: box.top + box.height / 2,
-          particles: taskParticles(entry),
-        };
-        setCelebrations((current) => [...current.slice(-3), celebration]);
-      }
+
     }
   }
   function exportData() {
@@ -1006,7 +1014,8 @@ function App() {
     calendarPeriod === "All" ? "This Month" : calendarPeriod,
     calendarAnchor,
   );
-  const allCalendarEntries = filtered
+  const scheduled = filtered.filter(entry=>!entry.transactionType);
+  const allCalendarEntries = scheduled
     .filter((e) => e.beginsOn || e.endsOn)
     .sort((a, b) =>
       (a.beginsOn || a.endsOn).localeCompare(b.beginsOn || b.endsOn),
@@ -1024,7 +1033,7 @@ function App() {
       : calendarLayout === "This Week"
         ? 7
         : 1;
-  const calendarItems = filtered
+  const calendarItems = scheduled
     .flatMap((e) =>
       occurrences(e, calendarStart, addDays(calendarStart, calendarDays - 1)),
     )
@@ -1080,7 +1089,7 @@ function App() {
             disabled={busy}
             onClick={(event) => toggle(e, date, event.currentTarget)}
           >
-            {done ? (e.budgetType || e.transactionType ? "💰" : "✅") : ""}
+            {done ? taskCompletionGlyph(e) : ""}
           </button>
         ) : (
           <span
@@ -1138,7 +1147,7 @@ function App() {
           <span
             className={`due ${e.task && due < today && !done ? "overdue" : ""}`}
           >
-            <span>{e.endsOn ? (e.task ? "Due" : "Ends") : "Starts"} </span>
+            <span>{e.task ? "Due" : e.endsOn ? "Ends" : "Starts"} </span>
             <time dateTime={due}>
               {view === "Todo"
                 ? formatDate(due, true)
@@ -1152,20 +1161,25 @@ function App() {
             )}
           </span>
         )}
-        {e.budgetType&&<button type="button" className="secondary budget-track-button" disabled={busy} onClick={()=>trackBudget(e)}>Track {e.budgetType}</button>}
+
         {e.task&&<span className="task-anticipation" aria-hidden="true">{done?"\u{1F440} \u{2049}\uFE0F":"\u{1F440} \u{203C}\uFE0F"}</span>}
         <span className="entry-sweat" aria-hidden="true">
           <span>💧</span>
           <span>💧</span>
         </span>
+        <div className="thought-controls" role="group" aria-label={`Actions for ${e.name}`}>
+          <LocationLinks where={e.where}/>
+        {e.budgetType&&<button type="button" className="secondary budget-track-button" disabled={busy} aria-label={`Track ${e.budgetType}`} title={`Track ${e.budgetType}`} onClick={()=>trackBudget(e)}><span aria-hidden="true">{'\u{1F4B8}'}</span></button>}
         <button
           className="delete-button"
           aria-label={`Delete ${e.name}`}
+          title={`Delete ${e.name}`}
           disabled={busy}
           onClick={() => remove(e)}
         >
-          🗑️ Delete
+          <span aria-hidden="true">{'\u{1F5D1}\uFE0F'}</span>
         </button>
+        </div>
       </PersonalitySurface>
     );
   }
@@ -1192,10 +1206,10 @@ function App() {
           brain
         </a>
         <nav aria-label="Main navigation">
-          {(["Inbox", "Todo", "Calendar", "Budget", "Board", "Thoughts"] as const).map((v) => (
+          {(["Inbox", "Pinned", "Todo", "Calendar", "Budget", "Board", "Thoughts"] as const).map((v) => (
             <button
               key={v}
-              className={view === v ? "active" : ""}
+              className={`${view === v ? "active" : ""}${v === "Board" ? " board-navigation" : ""}`}
               aria-current={view === v ? "page" : undefined}
               onClick={() => setView(v)}
             >
@@ -1330,6 +1344,7 @@ function App() {
                         setEditor({
                           ...blankEntry(),
                           task: view === "Todo",
+                          pin: view === "Pinned",
                           ...(view === "Calendar"
                             ? { beginsOn: selectedDay }
                             : {}),
@@ -1381,7 +1396,7 @@ function App() {
                                   month: "long",
                                   year: "numeric",
                                 })
-                            : view === "Thoughts" ? "All thoughts" : "All-time overview"}
+                            : view === "Pinned" ? "Pinned thoughts" : view === "Thoughts" ? "All thoughts" : "All-time overview"}
                       </h2>
                     </div>
                     <div className="filters">
@@ -1415,7 +1430,7 @@ function App() {
                 onRemoveCard={(entryId,itemId)=>updateBoard(entryId,items=>items.filter(item=>item.id!==itemId))}
                 onEntryChange={(entry,patch)=>change(stateRef.current.entries.map(current=>current.id===entry.id?{...current,...patch,updatedAt:new Date().toISOString()}:current))}
                 onLayout={moves=>change(stateRef.current.entries.map(entry=>({...entry,boardItems:entry.boardItems.map(item=>{const move=moves.find(move=>move.entryId===entry.id&&move.itemId===item.id);return move?{...item,...move.patch}:item}),...(moves.some(move=>move.entryId===entry.id)?{updatedAt:new Date().toISOString()}:{} )})))}
-                onEdit={setEditor}/>} 
+                onEdit={setEditor} onTrack={trackBudget}/>}
               {view === "Todo" && (
                 <>
                   <div className="range-toolbar"><TimeWindowFilter label="Todo" value={todoPeriod} anchor={todoAnchor} today={today} onChange={period=>{setTodoPeriod(period);setTodoAnchor(today)}} onMove={direction=>{if(todoPeriod!=='All')setTodoAnchor(shiftPeriod(todoPeriod,todoAnchor,direction))}}/></div>
@@ -1646,9 +1661,10 @@ function App() {
                       )}
                     </>
                   )}
-                  {filtered.some(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn)&&<section aria-label="Tasks for any time"><h3>Any time</h3><div className="entry-list">{filtered.filter(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn).map(entry=>row(entry))}</div></section>}
+                  {scheduled.some(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn)&&<section aria-label="Tasks for any time"><h3>Any time</h3><div className="entry-list">{scheduled.filter(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn).map(entry=>row(entry))}</div></section>}
                 </>
               )}
+              {view === "Pinned"&&<Pinned onTrack={trackBudget} entries={store.entries} visible={filtered} connection={store.connection} token={session?.token} onEdit={setEditor} onEntryChange={(entry,patch)=>change(stateRef.current.entries.map(current=>current.id===entry.id?{...current,...patch,updatedAt:new Date().toISOString()}:current))} onReorder={entries=>change(entries)}/>}
               {view === "Thoughts"&&<section className="entry-list" aria-label="All thoughts">{filtered.length?filtered.map(entry=>row(entry)):empty('No matching thoughts','Search your thoughts or add a thought.')}</section>}
               {view === "Budget" && (
                 <>
@@ -1733,6 +1749,7 @@ function App() {
           entries={store.entries}
           presetSections={editor.boardItems.some(item=>item.showList)?['note','list']:store.entries.some(e=>e.id===editor.id)||editor.id===copyDraftId?[]:defaultSections(view)}
           onCopy={beginCopy}
+          onDelete={remove}
           replacingFuture={futureReplacement?.draftId===editor.id}
           save={saveEntry}
           close={() => {setEditor(null);setFutureReplacement(null);}}
@@ -1751,17 +1768,17 @@ function App() {
           <p className="completion-description">This thought and links to it will be removed. This cannot be undone.</p>
         </div>
         <div className="completion-actions">
-          <button type="button" className="completion-delete" onClick={() => {
+          <button type="button" className="completion-delete" aria-label="Delete thought" title="Delete thought" onClick={() => {
             removeConfirmed(deleteTarget);
             setDeleteTarget(null);
-          }}>Delete thought</button>
+          }}><span aria-hidden="true">{'\u{1F5D1}\uFE0F'}</span></button>
           <button type="button" autoFocus className="primary" onClick={() => setDeleteTarget(null)}>Cancel</button>
         </div>
       </Modal>}
       {completedTarget && <Modal title="Task completed" className="completion-dialog" close={() => setCompletedTarget(null)}>
         <div className="completion-body">
           <div className="completion-task">
-            <span className="completion-check" aria-hidden="true">✓</span>
+            <span className="completion-check" aria-hidden="true">{taskCompletionGlyph(completedTarget)}</span>
             <strong>{completedTarget.name}</strong>
           </div>
           <p className="completion-description">{completedTarget.repeat
@@ -1775,15 +1792,15 @@ function App() {
           </div>}
         </div>
         <div className="completion-actions">
-          {!completedTarget.repeat && <button type="button" className="completion-delete" onClick={() => {
+          {!completedTarget.repeat && <button type="button" className="completion-delete" aria-label="Delete task" title="Delete task" onClick={() => {
             removeConfirmed(completedTarget);
             setCompletedTarget(null);
-          }}>Delete task</button>}
+          }}><span aria-hidden="true">{'\u{1F5D1}\uFE0F'}</span></button>}
           <button type="button" autoFocus className={completedTarget.budgetType ? 'secondary' : 'primary'} onClick={() => setCompletedTarget(null)}>{completedTarget.budgetType ? 'Ignore transaction' : 'Keep task'}</button>
-          {completedTarget.budgetType && <button type="button" className={`primary budget-track-button${completedTarget.color?` item-colored board-${completedTarget.color}`:''}`} onClick={() => {
+          {completedTarget.budgetType && <button type="button" aria-label={`Track ${completedTarget.budgetType}`} title={`Track ${completedTarget.budgetType}`} className={`primary budget-track-button${completedTarget.color?` item-colored board-${completedTarget.color}`:''}`} onClick={() => {
             trackBudget(completedTarget, true);
             setCompletedTarget(null);
-          }}>Track {completedTarget.budgetType}</button>}
+          }}><span aria-hidden="true">{'\u{1F4B8}'}</span></button>}
         </div>
       </Modal>}
       {settings && (

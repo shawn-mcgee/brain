@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { blankEntry } from "../src/domain.ts";
-import { taskTheme, taskParticles } from "../src/personality.ts";
+import { taskTheme, taskParticles, taskCompletionKind, taskCompletionGlyph } from "../src/personality.ts";
 const entry = (note, extra = {}) => ({ ...blankEntry(), name:note, ...extra });
 test("completion particles use the task subject, including financial attributes", () => {
   for (const [note, theme] of [
@@ -43,4 +43,17 @@ test("particle bursts are bounded, randomizable, and use relevant glyphs", () =>
     taskParticles(entry("Pay rent"), () => 0.1),
     taskParticles(entry("Pay rent"), () => 0.9),
   );
+});
+
+
+test('completion priority is money, then checklist, then plain task regardless of name',()=>{
+  const list=[{id:'line',text:'First',completed:false,completedDates:[]}];
+  const plain=entry('Clean',{task:true}),checklist=entry('Pay bills',{task:true,list}),money={...checklist,budgetType:'expense'};
+  assert.equal(taskCompletionKind(plain),'plain');assert.equal(taskCompletionGlyph(plain),'\u2705');
+  assert.equal(taskCompletionKind(checklist),'list');assert.equal(taskCompletionGlyph(checklist),'\u{1F4AF}');assert.equal(taskTheme(checklist),'list');
+  const particles=taskParticles(checklist,()=>0);
+  assert.ok(particles.every(p=>p.glyph==='\u{1F4AF}'));
+  for(const financial of [money,{...checklist,transactionType:'income'}]){
+    assert.equal(taskCompletionKind(financial),'money');assert.equal(taskCompletionGlyph(financial),'\u{1F4B0}');assert.equal(taskTheme(financial),'money');
+  }
 });

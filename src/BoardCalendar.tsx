@@ -13,7 +13,7 @@ export default function BoardCalendar({item,entries,onUpdate,onEdit}:{item:Board
   const [picked,setPicked]=useState<string|null>(null);
   const selected=picked&&picked>=range.from&&picked<=range.to?picked:range.anchor;
   const {from,to}=range;
-  const events=useMemo(()=>entries.flatMap(entry=>occurrences(entry,from,to)),[entries,from,to]);
+  const events=useMemo(()=>entries.filter(entry=>!entry.transactionType).flatMap(entry=>occurrences(entry,from,to)),[entries,from,to]);
   const agenda=events.filter(event=>event.start<=selected&&event.end>=selected);
   const start=range.period==='month'?addDays(range.from,-parseDate(range.from).getDay()):range.from;
   const count=range.period==='month'?42:7;

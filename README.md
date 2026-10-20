@@ -213,3 +213,16 @@ List metadata is stored in the new JSON `list` column on `Entries`. Existing She
 **Add list** in the board?s plus menu creates a green card with Note and List sections ready to use. Task is off by default. An empty list remains available on that card after reopening the board.
 
 **Pin existing thought** in the board?s plus menu opens a searchable thoughts popup. Filter by person, group, type, and board status. Thoughts already placed on the board are dimmed and disabled, including thoughts in collapsed groups. The popup stays open so multiple thoughts can be pinned.
+
+
+### Pinned thoughts and mobile updates
+
+Add **Pin** in a thought's editor to include it in **Pinned**, immediately after Inbox. Pinned uses the shared search and person filters and displays cards in rows from left to right, then top to bottom. Image cards include a carousel. Drag a card's Move handle with a mouse or touch to reorder it, or focus the handle and use arrow keys. The order synchronizes between browsers. Removing Pin leaves the thought and its board placements intact.
+
+Board position controls now say **Lock** and **Unlock**, independently of the Pin attribute. Existing card and group locks keep their saved state. Board is hidden on phone layouts up to 600 CSS pixels wide and remains available on tablets. Resizing from Board to a phone layout opens Pinned.
+
+Todo and Calendar (including board calendars) exclude actual tracked income and expense transactions. Scheduled budget plans remain visible. Where offers **Open in Maps** and **Directions from here** in editors, item rows, pinned cards, and board cards. Google Maps determines the starting location when no origin is supplied.
+
+Mobile budget rows give Track and Delete their own action row below the amount and date.
+
+**Deploy the current `apps-script/Code.gs` as a new web-app version before syncing this update.** Sync API version 10 adds `pin` and `pinOrder`. Existing 29-column Sheets migrate automatically, preserving budget order and board locks. The migration also supports older recognized schemas; do not manually rename or reorder Sheet headers. The cache namespace changes so pre-migration snapshots cannot be returned under the new protocol.

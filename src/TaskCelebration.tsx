@@ -5,7 +5,7 @@ export type Celebration = {
   id: string;
   entryId: string;
   date?: string;
-  money: boolean;
+  kind: 'money' | 'list' | 'plain';
   x: number;
   y: number;
   particles: ReturnType<typeof taskParticles>;
@@ -25,11 +25,11 @@ export default function TaskCelebration({
   }, []);
   return (
     <div
-      className={`particle-burst${celebration.money ? " money-celebration" : ""}`}
+      className={`particle-burst${celebration.kind === 'money' ? " money-celebration" : ""}`}
       style={{ left: celebration.x, top: celebration.y }}
     >
-      <span className="completion-stamp">{celebration.money ? "💰" : "✅"}</span>
-      <span className="completion-label">{celebration.money ? "Cha-ching!" : "Done!"}</span>
+      <span className="completion-stamp">{celebration.kind === 'money' ? "\u{1F4B0}" : celebration.kind === 'list' ? "\u{1F4AF}" : "\u2705"}</span>
+      <span className="completion-label">{celebration.kind === 'money' ? "Cha-ching!" : celebration.kind === 'list' ? "100%!" : "Done!"}</span>
       {celebration.particles.map((particle, index) => (
         <span
           key={index}

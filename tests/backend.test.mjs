@@ -228,7 +228,7 @@ test("legacy Entries headers and rows migrate without losing entry data", () => 
   assert.equal(result.ok,true);
   assert.equal(result.apiVersion,SYNC_API_VERSION);
   assert.deepEqual(result.entries,[entry]);
-  assert.deepEqual(Array.from(api.cells[0].slice(-9)),['name','where','color','tags','group','list','repeatUntil','budgetOrder','budgetGroupOrder']);
+  assert.deepEqual(Array.from(api.cells[0].slice(20)),['name','where','color','tags','group','list','repeatUntil','budgetOrder','budgetGroupOrder','pin','pinOrder']);
 });
 
 test("attachments round-trip in chunks and ordinary sync returns metadata only", () => {
@@ -449,9 +449,27 @@ test('budget order round-trips and version 8 Sheets migrate without losing budge
   const migrated=legacy.call({action:'read',token:'one'});
   assert.equal(migrated.ok,true);
   assert.deepEqual(migrated.entries,[{...entry,budgetOrder:-1,budgetGroupOrder:-1}]);
-  assert.deepEqual(Array.from(legacy.cells[0].slice(27)),['budgetOrder','budgetGroupOrder']);
+  assert.deepEqual(Array.from(legacy.cells[0].slice(27)),['budgetOrder','budgetGroupOrder','pin','pinOrder']);
   assert.equal(migrated.revision,1);
   legacy.clearCache();assert.equal(legacy.call({action:'read',token:'one'}).revision,1);
   const invalid=api.call({action:'write',token:'one',revision:written.revision,entries:[{...entry,budgetOrder:1.5}]});
   assert.match(invalid.error,/budget order/);
+});
+
+
+test('version 9 Sheets migrate Pin columns once without losing budgets or board locks',()=>{
+  const api=backend(), entry={...blankEntry(),name:'Existing rent',budgetType:'expense',amount:1200,budgetOrder:2,budgetGroupOrder:1,boardItems:[{...newBoardItem('sticky'),pinned:true}]};
+  assert.equal(api.call({action:'write',token:'one',revision:0,entries:[entry]}).ok,true);
+  api.cells[0]=api.cells[0].slice(0,29);api.cells[1]=api.cells[1].slice(0,29);api.clearCache();
+  const migrated=api.call({action:'read',token:'two'});
+  assert.equal(migrated.ok,true,migrated.error);assert.deepEqual(migrated.entries,[entry]);
+  assert.deepEqual(Array.from(api.cells[0].slice(29)),['pin','pinOrder']);
+  assert.equal(api.cells[1][29],'false');assert.equal(api.cells[1][30],'-1');
+  api.clearCache();assert.equal(api.call({action:'read',token:'one'}).revision,migrated.revision);
+  const pinned={...entry,pin:true,pinOrder:0};
+  const saved=api.call({action:'write',token:'one',revision:migrated.revision,entries:[pinned]});
+  assert.equal(saved.ok,true,saved.error);api.clearCache();
+  assert.deepEqual(api.call({action:'read',token:'two'}).entries,[pinned]);
+  for(const patch of [{pin:'yes'},{pinOrder:-2},{pinOrder:0.5}])assert.match(api.call({action:'write',token:'one',revision:saved.revision,entries:[{...pinned,...patch}]}).error,/pin settings/);
+  assert.equal(api.call({action:'write',token:'one',apiVersion:9,revision:saved.revision,entries:[]}).code,'UPGRADE_REQUIRED');
 });

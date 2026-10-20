@@ -1,5 +1,6 @@
 import type { Entry } from "./domain.ts";
 const themes = {
+  list: ['\u{1F4AF}','\u{1F3AF}','\u{1F3C6}','\u2728'],
   money: ["🪙", "💵", "💸", "💰"],
   chores: ["🧹", "🫧", "🧽", "✨"],
   food: ["🥕", "🍎", "🥦", "🛒"],
@@ -9,7 +10,16 @@ const themes = {
   study: ["📚", "✏️", "📝", "🎓"],
   general: ["⭐", "✨", "🎉", "✅"],
 };
+export function taskCompletionKind(entry:Entry):'money'|'list'|'plain' {
+  return entry.budgetType||entry.transactionType?'money':entry.list.length?'list':'plain';
+}
+export function taskCompletionGlyph(entry:Entry):string {
+  const kind=taskCompletionKind(entry);
+  return kind==='money'?'\u{1F4B0}':kind==='list'?'\u{1F4AF}':'\u2705';
+}
 export function taskTheme(entry: Entry): keyof typeof themes {
+  const kind=taskCompletionKind(entry);
+  if(kind!=='plain')return kind;
   const text = `${entry.name} ${entry.note}`.toLowerCase();
   if (
     entry.budgetType ||

@@ -21,6 +21,8 @@ export type Entry = {
   group: string;
   budgetOrder: number;
   budgetGroupOrder: number;
+  pin: boolean;
+  pinOrder: number;
   task: boolean;
   completed: boolean;
   completedDates: string[];
@@ -61,6 +63,8 @@ export function blankEntry(): Entry {
     group: '',
     budgetOrder: -1,
     budgetGroupOrder: -1,
+    pin: false,
+    pinOrder: -1,
     task: false,
     completed: false,
     completedDates: [],
@@ -157,7 +161,7 @@ export function todoOccurrences(
   showDone = false,
 ): Occurrence[] {
   const range = period === "All" ? null : periodRange(period, today);
-  const candidates = entries
+  const candidates = entries.filter(entry=>!entry.transactionType)
     .flatMap((e) => {
       if(e.task&&!e.beginsOn&&!e.endsOn)return [nextTask(e,today)!];
       if (range) return occurrences(e, range.from, range.to);
@@ -205,8 +209,12 @@ export function todoOccurrences(
   candidates.forEach(visit);
   return ordered;
 }
+export function hasTimeRange(entry:Entry):boolean {
+  return !!entry.beginsOn&&!!entry.endsOn&&(entry.beginsOn!==entry.endsOn||entry.beginsAt!==entry.endsAt);
+}
 export function occurrenceHighlight(o: Occurrence, today: string): string {
   if (!o.start && !o.end) return "";
+  if(o.entry.task&&!hasTimeRange(o.entry))return o.end===today?'Due today':'';
   if (o.start < today && o.end >= today)
     return o.end === today ? "Ends today" : "In progress";
   if (o.start === today)
@@ -338,6 +346,7 @@ export function sortTasks(entries: Entry[], today: string): Entry[] {
   return result;
 }
 export function validateEntry(e: Entry, entries: Entry[]): string {
+  if(typeof e.pin!=='boolean'||!Number.isSafeInteger(e.pinOrder)||e.pinOrder< -1)return 'Invalid pin settings.';
   if([e.budgetOrder,e.budgetGroupOrder].some(value=>!Number.isSafeInteger(value)||value< -1))return 'Invalid budget order.';
   if(!Array.isArray(e.list)||e.list.length>200||JSON.stringify(e.list).length>40000)return 'Keep lists under 200 lines and 40,000 characters.';
   const listIds=new Set<string>();
@@ -412,7 +421,7 @@ export function decodeEntries(value: unknown): Entry[] {
     const legacy=raw.name===undefined && typeof raw.note==='string';
     const lines=legacy?raw.note.trim().split(/\r?\n/):[];
     const dates=raw.beginsOn&&!raw.endsOn?{endsOn:raw.beginsOn,endsAt:raw.beginsAt}:raw.endsOn&&!raw.beginsOn?{beginsOn:raw.endsOn,beginsAt:raw.endsAt}:{};
-    return {...raw,budgetOrder:raw.budgetOrder??-1,budgetGroupOrder:raw.budgetGroupOrder??-1,repeatUntil:raw.repeatUntil??'',...dates,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),list:raw.list??[],where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
+    return {...raw,pin:raw.pin??false,pinOrder:raw.pinOrder??-1,budgetOrder:raw.budgetOrder??-1,budgetGroupOrder:raw.budgetGroupOrder??-1,repeatUntil:raw.repeatUntil??'',...dates,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),list:raw.list??[],where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
   });
   const strings = [
     "name",

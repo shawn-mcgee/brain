@@ -3,6 +3,7 @@ import type { Entry } from "./domain.ts";
 import {reconcileList} from './checklist-model.ts';
 export const sectionNames = {
   note: 'Note',
+  pin: 'Pin',
   task: "Task",
   list: 'List',
   who: "Who",
@@ -18,6 +19,7 @@ export const sectionNames = {
 } as const;
 export type EntrySection = keyof typeof sectionNames;
 export const sectionEmoji: Record<EntrySection, string> = {
+  pin: '\u{1F4CC}',
   note: '📝',
   task: "✅",
   list: '☑️',
@@ -34,6 +36,7 @@ export const sectionEmoji: Record<EntrySection, string> = {
 };
 export function initialEntrySections(entry: Entry): EntrySection[] {
   const sections: EntrySection[] = [];
+  if(entry.pin)sections.push('pin');
   if(entry.note)sections.push('note');
   if (entry.task) sections.push("task");
   if (entry.list.length) sections.push('list');
@@ -66,6 +69,7 @@ export function removeEntrySection(
   section: EntrySection,
 ): { entry: Entry; sections: EntrySection[] } {
   const cleared: Record<EntrySection, Partial<Entry>> = {
+    pin: {pin:false,pinOrder:-1},
     note: {note:''},
     task: { task: false, completed: false, completedDates: [], requires: [] },
     list: {list:[]},
@@ -95,10 +99,12 @@ export function removeEntrySection(
 export function initializeEntrySection(entry:Entry,section:EntrySection):Entry {
   if(section==='when'){const date=entry.beginsOn||entry.endsOn||dateKey(new Date());const time=entry.beginsAt||entry.endsAt;return {...entry,beginsOn:date,endsOn:entry.endsOn||date,beginsAt:time,endsAt:entry.endsAt||time};}
   if(section==='money'&&!entry.budgetType&&!entry.transactionType)return {...entry,budgetType:'income'};
+  if(section==='pin')return {...entry,pin:true};
   if(section==='task')return reconcileList({...entry,task:true});
   return entry;
 }
 export const sectionDescriptions:Record<EntrySection,string>={
+  pin:'Show this thought in the Pinned view. Drag its handle there to reorder it.',
   note:'Extra details shown in the card body or photo caption.',
   task:'This thought can be marked complete.',
   list:'A checklist. Completing every line completes the task; toggling the task checks or unchecks every line.',
@@ -114,4 +120,4 @@ export const sectionDescriptions:Record<EntrySection,string>={
   attachments:'Files attached to this thought, loaded when needed.',
 };
 
-export const sectionOrder:EntrySection[]=['note','task','requires','list','who','when','repeat','where','money','attachments','color','group','tags'];
+export const sectionOrder:EntrySection[]=['pin','note','task','requires','list','who','when','repeat','where','money','attachments','color','group','tags'];

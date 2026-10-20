@@ -151,10 +151,10 @@
 :root[data-theme=dark] .item-color-options button[aria-pressed=true] { outline-color:var(--theme-text); }
 
 /* Muted pastel paper stays distinct against the purple canvas, with dark ink. */
-:root[data-theme=dark] :is(.board-card,.entry-row.item-colored,.board-inventory-picker .inventory-picker-row.item-colored,.calendar-day small.item-colored,.board-agenda-entry.item-colored) { color:var(--paper-ink,var(--theme-text)); }
+:root[data-theme=dark] :is(.board-card,.pinned-card,.entry-row.item-colored,.board-inventory-picker .inventory-picker-row.item-colored,.calendar-day small.item-colored,.board-agenda-entry.item-colored) { color:var(--paper-ink,var(--theme-text)); }
 :root[data-theme=dark] .board-card :is(.board-calendar,.board-agenda-entry,.board-day-items button,.board-calendar-grid button,.board-calendar-title button,.board-inline-text.is-placeholder,.board-move) { color:var(--paper-ink); }
-:root[data-theme=dark] .board-card :is(.board-tag,.board-agenda-text small,.board-day-items button span,.checklist-line .is-complete,.board-inline-text.is-placeholder) { color:var(--paper-muted); }
-:root[data-theme=dark] .board-card :is(.board-calendar-options select,.board-calendar-options input,.board-inline-input) { background:#ffffff40; color:var(--paper-ink); border-color:#25212c50; }
+:root[data-theme=dark] :is(.board-card,.pinned-card) :is(.board-tag,.board-agenda-text small,.board-day-items button span,.checklist-line .is-complete,.board-inline-text.is-placeholder) { color:var(--paper-muted); }
+:root[data-theme=dark] :is(.board-card,.pinned-card) :is(.board-calendar-options select,.board-calendar-options input,.board-inline-input) { background:#ffffff40; color:var(--paper-ink); border-color:#25212c50; }
 :root[data-theme=dark] .board-card input::placeholder { color:var(--paper-muted); }
 :root[data-theme=dark] .board-card .board-calendar-grid button[aria-pressed=true] { background:#ffffff40; border-color:#5c387c; }
 :root[data-theme=dark] .board-card .board-calendar-grid small { color:#5c387c; }
@@ -248,12 +248,12 @@
 :root[data-theme=dark] .board-inventory-picker .inventory-picker-row.item-colored :is(.muted,.hint,.inventory-picker-note,.inventory-picker-description small) { color:var(--paper-muted); }
 
 /* Thought details use the same paper palette as their parent in either theme. */
-:root[data-theme] :is(.entry-row.item-colored,.inventory-picker-row.item-colored,.board-card) {
+:root[data-theme] :is(.entry-row.item-colored,.inventory-picker-row.item-colored,.board-card,.pinned-card) {
   --thought-detail-bg:color-mix(in srgb,var(--paper) 65%,white);
   --thought-detail-ink:var(--paper-ink,#30232e);
 }
 :root[data-theme] .entry-row.item-colored :is(.person-pill,.upcoming-pill),
-:root[data-theme] :is(.board-card,.inventory-picker-row.item-colored) .board-tags .board-tag {
+:root[data-theme] :is(.board-card,.pinned-card,.inventory-picker-row.item-colored) .board-tags .board-tag {
   background:var(--thought-detail-bg);
   color:var(--thought-detail-ink);
   border:1px solid var(--paper-deep);
@@ -263,7 +263,7 @@
 }
 
 /* Task toggles and native checklist boxes follow their thought's paper color. */
-:root[data-theme] :is(.entry-row.item-colored,.board-card,.thought-editor-colored) {
+:root[data-theme] :is(.entry-row.item-colored,.board-card,.pinned-card,.thought-editor-colored) {
   --thought-check-accent:color-mix(in srgb,var(--paper-deep) 65%,#25212c);
   --thought-check-bg:color-mix(in srgb,var(--paper) 65%,white);
 }
@@ -276,11 +276,11 @@
   background:var(--thought-check-accent);
   border-color:var(--thought-check-accent);
 }
-:root[data-theme] :is(.entry-row.item-colored,.board-card,.thought-editor-colored) input[type=checkbox] {
+:root[data-theme] :is(.entry-row.item-colored,.board-card,.pinned-card,.thought-editor-colored) input[type=checkbox] {
   accent-color:var(--thought-check-accent);
   color-scheme:light;
 }
-:root[data-theme] :is(.entry-row.item-colored,.board-card,.thought-editor-colored) :is(.task-check,input[type=checkbox]):focus-visible {
+:root[data-theme] :is(.entry-row.item-colored,.board-card,.pinned-card,.thought-editor-colored) :is(.task-check,input[type=checkbox]):focus-visible {
   outline-color:var(--thought-check-accent);
 }
 
@@ -373,3 +373,121 @@
 :root[data-theme] .thought-editor-colored .range-switch-track { background:var(--paper-deep); border-color:var(--theme-accent); }
 :root[data-theme] .thought-editor-colored .money-amount-input:focus-within { border-color:var(--theme-accent); box-shadow:0 0 0 1px var(--theme-accent); }
 :root[data-theme] .thought-editor-colored :focus-visible { outline-color:var(--theme-accent); }
+
+
+/* Pinned cards share the board's pastel paper and dark ink in dark mode. */
+:root[data-theme=dark] .pinned-card.item-colored {
+  --theme-text:var(--paper-ink);
+  --theme-muted:var(--paper-muted);
+  --theme-border:var(--paper-deep);
+  color-scheme:light;
+}
+
+/* Uncolored pinned thoughts use the app surface until Color is attached. */
+:root[data-theme] .pinned-card:not(.item-colored) {
+  --paper:var(--theme-surface);
+  --paper-deep:var(--theme-border);
+  --paper-ink:var(--theme-text);
+  --paper-muted:var(--theme-muted);
+  --thought-detail-bg:var(--theme-raised);
+  --thought-detail-ink:var(--theme-text);
+  --thought-check-accent:var(--theme-accent);
+  border:1px solid var(--theme-border);
+}
+:root[data-theme] .pinned-card:not(.item-colored) :is(.pinned-edit-button,.pinned-unpin-button,.board-tag,.board-inline-input) {
+  background:var(--theme-raised);
+  color:var(--theme-text);
+  border-color:var(--theme-border);
+}
+:root[data-theme] .pinned-card:not(.item-colored) header :is(.pinned-edit-button,.pinned-unpin-button):hover {
+  background:var(--theme-hover);
+}
+
+
+:root[data-theme] .editor-delete-actions.thought-controls > .delete-button {
+  flex-basis:auto;
+  width:auto;
+  max-width:none;
+  padding-inline:12px;
+  gap:6px;
+}
+
+/* The palette is app chrome, so its text must not inherit the card's dark ink. */
+:root[data-theme] .pinned-color-picker .board-color-options {
+  --theme-text:#30232e;
+  --theme-raised:#f8edf3;
+  --theme-hover:#efdce7;
+  --theme-border:#bca5b5;
+  background:var(--theme-raised);
+  color:var(--theme-text);
+  border-color:var(--theme-border);
+}
+:root[data-theme=dark] .pinned-color-picker .board-color-options {
+  --theme-text:#eee8f3;
+  --theme-raised:#30283b;
+  --theme-hover:#40334e;
+  --theme-border:#6b587c;
+}
+
+/* Thought action buttons share one size and shape in lists and card headers. */
+:root[data-theme] .thought-controls > button,
+:root[data-theme] .thought-controls > .board-color-picker > button,
+:root[data-theme] .thought-controls .location-links a,
+:root[data-theme] .completion-actions .completion-delete {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 44px;
+  width:44px;
+  min-width:44px;
+  max-width:44px;
+  height:44px;
+  min-height:44px;
+  max-height:44px;
+  padding:4px;
+  margin:0;
+  border:1px solid var(--paper-deep,var(--theme-border));
+  border-radius:8px;
+  background:var(--thought-detail-bg,var(--theme-raised));
+  color:var(--paper-ink,var(--theme-text));
+  box-shadow:none;
+  font-size:18px;
+  line-height:1;
+  text-decoration:none;
+}
+:root[data-theme] :is(.item-colored,.board-card) {
+  --thought-control-hover-bg:color-mix(in srgb,var(--paper-deep) 80%,var(--paper-ink,#29271f));
+  --thought-control-hover-border:color-mix(in srgb,var(--paper-deep) 45%,var(--paper-ink,#29271f));
+}
+:root[data-theme] .thought-controls > button:hover:not(:disabled),
+:root[data-theme] .thought-controls > .board-color-picker > button:hover:not(:disabled),
+:root[data-theme] .thought-controls .location-links a:hover {
+  background:var(--thought-control-hover-bg,var(--theme-hover));
+  border-color:var(--thought-control-hover-border,var(--theme-border));
+  box-shadow:inset 0 0 0 1px var(--thought-control-hover-border,var(--theme-border));
+}
+:root[data-theme] .thought-controls .delete-button,
+:root[data-theme] .completion-actions .completion-delete {
+  background:#f8e9e7;
+  border-color:#dbb6b1;
+  color:#8b3e38;
+}
+:root[data-theme] .thought-controls .delete-button:hover:not(:disabled),
+:root[data-theme] .completion-actions .completion-delete:hover:not(:disabled) {
+  background:#f0d6d2;
+  border-color:#c58f87;
+  box-shadow:inset 0 0 0 1px #c58f87;
+  filter:none;
+}
+:root[data-theme=dark] .thought-controls .delete-button,
+:root[data-theme=dark] .completion-actions .completion-delete {
+  background:color-mix(in srgb,var(--thought-detail-bg,var(--theme-raised)) 90%,#b76570);
+  border-color:color-mix(in srgb,var(--paper-deep,var(--theme-border)) 75%,#b76570);
+  color:var(--paper-ink,var(--theme-text));
+}
+:root[data-theme=dark] .thought-controls .delete-button:hover:not(:disabled),
+:root[data-theme=dark] .completion-actions .completion-delete:hover:not(:disabled) {
+  background:color-mix(in srgb,var(--thought-detail-bg,var(--theme-raised)) 75%,#b76570);
+  border-color:#b76570;
+  box-shadow:inset 0 0 0 1px #b76570;
+}

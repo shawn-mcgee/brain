@@ -55,7 +55,7 @@ export default function Attachments({value,entryId,connection,token,itemName,not
       <div className="attachment-file-heading"><strong>📎 {file.name}</strong><span>{Math.ceil(file.size/1024)} KB</span></div>
       {isPreviewImage(file)?<AttachmentImage file={file} itemName={itemName} note={note} entryId={entryId} connection={connection} token={token} removalDisabled={busy} onRemove={()=>onChange(value.filter(f=>f.id!==file.id))}/>:<div className="attachment-file-actions">
         <button type="button" className="secondary" onClick={()=>downloadFile(file,entryId,connection,token).catch(e=>setError(e.message))}>Download</button>
-        <button type="button" className="secondary" disabled={busy} onClick={()=>onChange(value.filter(f=>f.id!==file.id))}>Remove file</button>
+        <button type="button" className="secondary" disabled={busy} aria-label={`Remove ${file.name}`} title="Remove file" onClick={()=>onChange(value.filter(f=>f.id!==file.id))}><span aria-hidden="true">{'\u2716\uFE0F'}</span></button>
       </div>}
     </div>)}
   </div>;

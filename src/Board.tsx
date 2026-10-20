@@ -11,10 +11,29 @@ import {isOnBoard} from './inventory-picker-model';
 import {entrySearchText} from './entry-attributes';
 import {groupBounds,packCards,translateCards} from './board-groups';
 import InlineText from './InlineText';
+import {createBoardViewport} from './board-viewport';
 type Viewport={x:number;y:number;zoom:number};
-export default function Board({entries,boardViews,onViewsChange,onRenameGroup,connection,token,onCreate,onPin,onUpdate,onRemoveCard,onEntryChange,onLayout,onEdit}:{entries:Entry[];boardViews:BoardItem[];onViewsChange:(items:BoardItem[])=>void;onRenameGroup:(source:string,name:string)=>void;connection:Connection;token?:string;onCreate:(entry:Entry)=>void;onPin:(entry:Entry,item:BoardItem)=>void;onUpdate:(entryId:string,itemId:string,patch:Partial<BoardItem>)=>void;onRemoveCard:(entryId:string,itemId:string)=>void;onEntryChange:(entry:Entry,patch:Partial<Entry>)=>void;onLayout:(moves:{entryId:string;itemId:string;patch:Partial<BoardItem>}[])=>void;onEdit:(entry:Entry)=>void}) {
-  const viewport=useRef<HTMLDivElement>(null);
-  const [view,setView]=useState<Viewport>(()=>{try{const saved=JSON.parse(localStorage.getItem('brain-board-view-v1')||'null');if(saved&&Number.isFinite(saved.x)&&Number.isFinite(saved.y)&&saved.zoom>=.25&&saved.zoom<=2)return saved;}catch{}return{x:80,y:60,zoom:1}});
+export default function Board({entries,boardViews,onViewsChange,onRenameGroup,connection,token,onCreate,onPin,onUpdate,onRemoveCard,onEntryChange,onLayout,onEdit,onTrack}:{entries:Entry[];boardViews:BoardItem[];onViewsChange:(items:BoardItem[])=>void;onRenameGroup:(source:string,name:string)=>void;connection:Connection;token?:string;onCreate:(entry:Entry)=>void;onPin:(entry:Entry,item:BoardItem)=>void;onUpdate:(entryId:string,itemId:string,patch:Partial<BoardItem>)=>void;onRemoveCard:(entryId:string,itemId:string)=>void;onEntryChange:(entry:Entry,patch:Partial<Entry>)=>void;onLayout:(moves:{entryId:string;itemId:string;patch:Partial<BoardItem>}[])=>void;onEdit:(entry:Entry)=>void;onTrack:(entry:Entry)=>void}) {
+  const viewport=useRef<HTMLDivElement>(null),world=useRef<HTMLDivElement>(null);
+  const [view,setDisplayedView]=useState<Viewport>(()=>{try{const saved=JSON.parse(localStorage.getItem('brain-board-view-v1')||'null');if(saved&&Number.isFinite(saved.x)&&Number.isFinite(saved.y)&&saved.zoom>=.25&&saved.zoom<=2)return saved;}catch{}return{x:80,y:60,zoom:1}});
+  const [camera]=useState(()=>createBoardViewport(view,()=>{},setDisplayedView,{
+    frame:callback=>requestAnimationFrame(callback),cancelFrame:cancelAnimationFrame,
+    delay:(callback,ms)=>window.setTimeout(callback,ms),cancelDelay:window.clearTimeout,
+  }));
+  const setView=camera.update;
+  useEffect(()=>{
+    camera.onPaint(current=>{
+    if(world.current)world.current.style.transform=`translate3d(${current.x}px,${current.y}px,0) scale(${current.zoom})`;
+    if(viewport.current){
+      viewport.current.style.backgroundPosition=`${current.x}px ${current.y}px`;
+      viewport.current.style.backgroundSize=`${24*current.zoom}px ${24*current.zoom}px`;
+    }
+  });
+    return()=>{
+    camera.cancel();
+    try{localStorage.setItem('brain-board-view-v1',JSON.stringify(camera.get()));}catch{}
+    };
+  },[camera]);
   const [pickerOpen,setPickerOpen]=useState(false),[error,setError]=useState(''),[query,setQuery]=useState('');
   const [panel,setPanel]=useState<'view'|'add'|null>(null);
   const controls=useRef<HTMLDivElement>(null),viewButton=useRef<HTMLButtonElement>(null),addButton=useRef<HTMLButtonElement>(null);
@@ -36,7 +55,7 @@ export default function Board({entries,boardViews,onViewsChange,onRenameGroup,co
     event.preventDefault();event.stopPropagation();
     if(pinch.current)return;
     const ids=[...touches.current.keys()].slice(0,2) as [number,number];
-    pinch.current={ids,points:[touches.current.get(ids[0])!,touches.current.get(ids[1])!],view};
+    pinch.current={ids,points:[touches.current.get(ids[0])!,touches.current.get(ids[1])!],view:camera.get()};
     gesture.current=null;groupGesture.current=null;setPreview(null);setGroupPreview({});
     for(const id of ids)viewport.current?.setPointerCapture(id);
     suppressClickUntil.current=event.timeStamp+500;
@@ -58,7 +77,7 @@ export default function Board({entries,boardViews,onViewsChange,onRenameGroup,co
     pinch.current=null;gesture.current=null;
     if(event.type!=='pointercancel'&&touches.current.size===1){
       const [id,point]=[...touches.current][0],rect=viewport.current!.getBoundingClientRect();
-      gesture.current={pointer:id,mode:'pan',startX:point.x+rect.left,startY:point.y+rect.top,view};
+      gesture.current={pointer:id,mode:'pan',startX:point.x+rect.left,startY:point.y+rect.top,view:camera.get()};
     }
     if(viewport.current?.hasPointerCapture(event.pointerId))viewport.current.releasePointerCapture(event.pointerId);
   }
@@ -97,8 +116,8 @@ export default function Board({entries,boardViews,onViewsChange,onRenameGroup,co
     element.addEventListener('pointerleave',forgetMouse);
     element.addEventListener('wheel',wheel,{passive:false});
     return()=>{element.removeEventListener('pointermove',trackMouse);element.removeEventListener('pointerenter',trackMouse);element.removeEventListener('pointerleave',forgetMouse);element.removeEventListener('wheel',wheel);};
-  },[]);
-  function center(kind:BoardKind){const width=kind==='calendar'?840:320,height=kind==='calendar'?850:360;return screenToBoard({x:Math.max(16,(size.width-width*view.zoom)/2),y:Math.max(16,(size.height-height*view.zoom)/2)},view)}
+  },[camera,setView]);
+  function center(kind:BoardKind){const width=kind==='calendar'?840:320,height=kind==='calendar'?850:360;return screenToBoard({x:Math.max(16,(size.width-width*camera.get().zoom)/2),y:Math.max(16,(size.height-height*camera.get().zoom)/2)},camera.get())}
   function add(kind:BoardKind|'list',existing?:Entry){
     const cardKind=kind==='list'?'sticky':kind;
     const point=center(cardKind),item={...newBoardItem(cardKind,point.x,point.y,maxZ),...(kind==='list'?{showList:true,color:'green'}:{})};
@@ -115,8 +134,8 @@ export default function Board({entries,boardViews,onViewsChange,onRenameGroup,co
     const centerY=all.length?(Math.min(...all.map(v=>v.item.y))+Math.max(...all.map(v=>v.item.y+v.item.height)))/2:0;
     setView(current=>({...current,x:size.width/2-centerX*current.zoom,y:size.height/2-centerY*current.zoom}));
   }
-  function begin(event:ReactPointerEvent<HTMLElement>,mode:'pan'|'move'|'resize',entry?:Entry,item?:BoardItem){if(event.button!==0||mode==='move'&&item?.pinned)return;event.preventDefault();event.stopPropagation();event.currentTarget.setPointerCapture(event.pointerId);const patch=item&&item.z<maxZ-1?{z:maxZ}:undefined;gesture.current={pointer:event.pointerId,mode,startX:event.clientX,startY:event.clientY,view,entryId:entry?.id,item,patch};if(item&&patch)setPreview({id:item.id,patch});}
-  function move(event:ReactPointerEvent<HTMLElement>){if(groupGesture.current||gesture.current)event.stopPropagation();const group=groupGesture.current;if(group&&group.pointer===event.pointerId){group.points=translateCards(group.cards.map(card=>card.item),(event.clientX-group.startX)/view.zoom,(event.clientY-group.startY)/view.zoom);setGroupPreview(Object.fromEntries(group.points.map(point=>[point.id,{x:point.x,y:point.y}])));return;}const current=gesture.current;if(!current||current.pointer!==event.pointerId)return;const dx=event.clientX-current.startX,dy=event.clientY-current.startY;if(current.mode==='pan')setView({...current.view,x:current.view.x+dx,y:current.view.y+dy});else if(current.item){const patch=current.mode==='move'?{x:Math.max(-10000000,Math.min(10000000,current.item.x+dx/current.view.zoom)),y:Math.max(-10000000,Math.min(10000000,current.item.y+dy/current.view.zoom))}:resizeBoardItem(current.item,dx/current.view.zoom,dy/current.view.zoom);current.patch={...current.patch,...patch};setPreview({id:current.item.id,patch:current.patch})}}
+  function begin(event:ReactPointerEvent<HTMLElement>,mode:'pan'|'move'|'resize',entry?:Entry,item?:BoardItem){if(event.button!==0||mode==='move'&&item?.pinned)return;event.preventDefault();event.stopPropagation();event.currentTarget.setPointerCapture(event.pointerId);const patch=item&&item.z<maxZ-1?{z:maxZ}:undefined;gesture.current={pointer:event.pointerId,mode,startX:event.clientX,startY:event.clientY,view:camera.get(),entryId:entry?.id,item,patch};if(item&&patch)setPreview({id:item.id,patch});}
+  function move(event:ReactPointerEvent<HTMLElement>){if(groupGesture.current||gesture.current)event.stopPropagation();const group=groupGesture.current;if(group&&group.pointer===event.pointerId){group.points=translateCards(group.cards.map(card=>card.item),(event.clientX-group.startX)/camera.get().zoom,(event.clientY-group.startY)/camera.get().zoom);setGroupPreview(Object.fromEntries(group.points.map(point=>[point.id,{x:point.x,y:point.y}])));return;}const current=gesture.current;if(!current||current.pointer!==event.pointerId)return;const dx=event.clientX-current.startX,dy=event.clientY-current.startY;if(current.mode==='pan')setView({...current.view,x:current.view.x+dx,y:current.view.y+dy});else if(current.item){const patch=current.mode==='move'?{x:Math.max(-10000000,Math.min(10000000,current.item.x+dx/current.view.zoom)),y:Math.max(-10000000,Math.min(10000000,current.item.y+dy/current.view.zoom))}:resizeBoardItem(current.item,dx/current.view.zoom,dy/current.view.zoom);current.patch={...current.patch,...patch};setPreview({id:current.item.id,patch:current.patch})}}
   function finish(event:ReactPointerEvent<HTMLElement>,cancel=false){const group=groupGesture.current;if(group&&group.pointer===event.pointerId){groupGesture.current=null;if(!cancel)applyLayout(group.cards,group.points);setGroupPreview({});if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);return;}const current=gesture.current;if(!current||current.pointer!==event.pointerId)return;gesture.current=null;if(!cancel&&current.item&&current.patch)update(current.item,entries.find(entry=>entry.id===current.entryId),current.patch);setPreview(null);if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)}
   function handle(item:BoardItem,entry:Entry|undefined,mode:'move'|'resize') {
     return {
@@ -138,7 +157,7 @@ export default function Board({entries,boardViews,onViewsChange,onRenameGroup,co
       <button ref={viewButton} type="button" className="board-control-button" aria-label="View controls" title="View controls" aria-expanded={panel==='view'} aria-controls={`${panelId}-view`} onClick={()=>setPanel(current=>current==='view'?null:'view')}><span aria-hidden="true">{'\u{1F50D}'}</span></button>
       <button ref={addButton} type="button" className="board-control-button" aria-label="Add to board" title="Add to board" aria-expanded={panel==='add'} aria-controls={`${panelId}-add`} onClick={()=>setPanel(current=>current==='add'?null:'add')}><span aria-hidden="true">{'\u{2795}'}</span></button>
       {panel==='view'&&<div id={`${panelId}-view`} className="board-control-panel" role="group" aria-label="View controls">
-        <label className="board-zoom-picker">Zoom<select aria-label="Zoom percent" value={Math.round(view.zoom*100)} onChange={event=>zoomBy(Number(event.target.value)/100/view.zoom)}>{[...new Set([25,50,75,100,125,150,200,Math.round(view.zoom*100)])].sort((a,b)=>a-b).map(percent=><option key={percent} value={percent}>{percent}%</option>)}</select></label>
+        <label className="board-zoom-picker">Zoom<select aria-label="Zoom percent" value={Math.round(camera.get().zoom*100)} onChange={event=>zoomBy(Number(event.target.value)/100/camera.get().zoom)}>{[...new Set([25,50,75,100,125,150,200,Math.round(camera.get().zoom*100)])].sort((a,b)=>a-b).map(percent=><option key={percent} value={percent}>{percent}%</option>)}</select></label>
         <button type="button" className="secondary" onClick={fit}>Fit thoughts</button>
         <button type="button" className="secondary" onClick={recenter}>Recenter</button>
       </div>}
@@ -153,19 +172,19 @@ export default function Board({entries,boardViews,onViewsChange,onRenameGroup,co
     </div>
     {pickerOpen&&<BoardInventoryPicker entries={entries} onPin={entry=>add('sticky',entry)} onClose={()=>{setPickerOpen(false);requestAnimationFrame(()=>addButton.current?.focus());}}/>}
     {error&&<p className="error" role="alert">{error}</p>}
-    <div ref={viewport} tabIndex={0} className="board-viewport" aria-label="Board canvas. Drag to pan, pinch to zoom, or use arrow keys." onPointerDownCapture={touchStart} onPointerMoveCapture={touchMove} onPointerUpCapture={touchEnd} onPointerCancelCapture={touchEnd} onClickCapture={event=>{if(event.timeStamp<suppressClickUntil.current){event.preventDefault();event.stopPropagation();}}} style={{backgroundPosition:`${view.x}px ${view.y}px`,backgroundSize:`${24*view.zoom}px ${24*view.zoom}px`}} onPointerDown={event=>{if(!(event.target as HTMLElement).closest('.board-card, .board-group-controls'))begin(event,'pan')}} onPointerMove={move} onPointerUp={event=>finish(event)} onPointerCancel={event=>finish(event,true)} onKeyDown={event=>{if(event.target!==event.currentTarget)return;const delta=event.shiftKey?100:40;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();setView(v=>({...v,x:v.x+(event.key==='ArrowLeft'?delta:event.key==='ArrowRight'?-delta:0),y:v.y+(event.key==='ArrowUp'?delta:event.key==='ArrowDown'?-delta:0)}))}}}>
-      {!all.length&&<div className="board-empty"><span aria-hidden="true">📌</span><h2>No thoughts pinned</h2><p>Create a board thought or pin an existing entry.</p></div>}
-      <div className="board-world" style={{transform:`translate(${view.x}px,${view.y}px) scale(${view.zoom})`}}>
+    <div ref={viewport} tabIndex={0} className="board-viewport" aria-label="Board canvas. Drag to pan, pinch to zoom, or use arrow keys." onPointerDownCapture={touchStart} onPointerMoveCapture={touchMove} onPointerUpCapture={touchEnd} onPointerCancelCapture={touchEnd} onClickCapture={event=>{if(event.timeStamp<suppressClickUntil.current){event.preventDefault();event.stopPropagation();}}} style={{backgroundPosition:`${camera.get().x}px ${camera.get().y}px`,backgroundSize:`${24*camera.get().zoom}px ${24*camera.get().zoom}px`}} onPointerDown={event=>{if(!(event.target as HTMLElement).closest('.board-card, .board-group-controls'))begin(event,'pan')}} onPointerMove={move} onPointerUp={event=>finish(event)} onPointerCancel={event=>finish(event,true)} onKeyDown={event=>{if(event.target!==event.currentTarget)return;const delta=event.shiftKey?100:40;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();setView(v=>({...v,x:v.x+(event.key==='ArrowLeft'?delta:event.key==='ArrowRight'?-delta:0),y:v.y+(event.key==='ArrowUp'?delta:event.key==='ArrowDown'?-delta:0)}))}}}>
+      {!all.length&&<div className="board-empty"><span aria-hidden="true">📌</span><h2>No thoughts on the board</h2><p>Create a board thought or pin an existing entry.</p></div>}
+      <div ref={world} className="board-world" style={{transform:`translate3d(${camera.get().x}px,${camera.get().y}px,0) scale(${camera.get().zoom})`}}>
         {groups.map(group=><div key={group.name} className={`board-group${group.state?.collapsed?' is-collapsed':''}`} style={{left:group.bounds.x,top:group.bounds.y,width:group.bounds.width,height:group.state?.collapsed?0:group.bounds.height}}>
           <div className="board-group-controls" style={{zIndex:maxZ+1}} role="group" tabIndex={group.state?.pinned?-1:0} data-pinned={!!group.state?.pinned} aria-label={`Group ${group.name}. Drag header or use arrow keys to move.`} onPointerDown={event=>{if((event.target as Element).closest('button,input,select,textarea,a,summary,[contenteditable=true]')||event.button!==0||group.state?.pinned)return;event.preventDefault();event.stopPropagation();event.currentTarget.setPointerCapture(event.pointerId);groupGesture.current={pointer:event.pointerId,startX:event.clientX,startY:event.clientY,cards:group.cards,points:group.cards.map(card=>({id:card.item.id,x:card.item.x,y:card.item.y}))};}} onPointerMove={move} onPointerUp={event=>finish(event)} onPointerCancel={event=>finish(event,true)} onKeyDown={event=>{if(event.target!==event.currentTarget||group.state?.pinned||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();event.stopPropagation();const d=event.shiftKey?50:10;applyLayout(group.cards,translateCards(group.cards.map(card=>card.item),event.key==='ArrowLeft'?-d:event.key==='ArrowRight'?d:0,event.key==='ArrowUp'?-d:event.key==='ArrowDown'?d:0));}}>
             <span className="board-group-drag" aria-hidden="true">&#10303;</span>
             <InlineText value={group.name} label={`Rename group ${group.name}`} className="board-group-name" onCommit={name=>onRenameGroup(group.name,name)}/>
-            <button type="button" aria-label={`Pin group ${group.name}`} aria-pressed={!!group.state?.pinned} onClick={()=>setGroup(group.name,{pinned:!group.state?.pinned})}>{'\u{1F4CC}'}</button>
+            <button type="button" aria-label={`${group.state?.pinned?"Unlock":"Lock"} group ${group.name}`} aria-pressed={!!group.state?.pinned} onClick={()=>setGroup(group.name,{pinned:!group.state?.pinned})}>{group.state?.pinned?"\u{1F512}":"\u{1F513}"}</button>
             <button type="button" aria-label={`${group.state?.collapsed?'Show':'Hide'} group ${group.name}`} title={group.state?.collapsed?'Show cards':'Hide cards'} aria-expanded={!group.state?.collapsed} onClick={()=>setGroup(group.name,{collapsed:!group.state?.collapsed})}><span aria-hidden="true">{group.state?.collapsed?'\u{1F441}\uFE0F':'\u{1F648}'}</span></button>
             <button type="button" aria-label={`Pack group ${group.name}`} title="Pack cards" onClick={()=>applyLayout(group.cards,packCards(group.cards.map(card=>card.item)))}><span aria-hidden="true">{'\u{1F4D0}'}</span></button>
           </div>
         </div>)}
-        {all.filter(({entry})=>!entry?.group||!collapsedGroups.has(entry.group)).map(({entry,item:stored})=>{const groupPatch=groupPreview[stored.id],cardPatch=preview?.id===stored.id?preview.patch:undefined;const item=groupPatch||cardPatch?{...stored,...groupPatch,...cardPatch}:stored;return <BoardCard key={item.id} item={item} entry={entry} entries={entries} connection={connection} token={token} onUpdate={patch=>update(item,entry,patch)} onEntryChange={onEntryChange} onEdit={onEdit} onActivate={()=>{if(stored.z<maxZ-1)update(stored,entry,{z:maxZ});}} moveHandle={handle(item,entry,'move')} resizeHandle={handle(item,entry,'resize')} dimmed={!matches.has(item.id)}/>})}
+        {all.filter(({entry})=>!entry?.group||!collapsedGroups.has(entry.group)).map(({entry,item:stored})=>{const groupPatch=groupPreview[stored.id],cardPatch=preview?.id===stored.id?preview.patch:undefined;const item=groupPatch||cardPatch?{...stored,...groupPatch,...cardPatch}:stored;return <BoardCard key={item.id} item={item} entry={entry} entries={entries} connection={connection} token={token} onUpdate={patch=>update(item,entry,patch)} onEntryChange={onEntryChange} onEdit={onEdit} onTrack={onTrack} onActivate={()=>{if(stored.z<maxZ-1)update(stored,entry,{z:maxZ});}} moveHandle={handle(item,entry,'move')} resizeHandle={handle(item,entry,'resize')} dimmed={!matches.has(item.id)}/>})}
       </div>
     </div>
   </section>;
