@@ -181,6 +181,8 @@ Add the **Files** section in any thought's editor to attach multiple files (up t
 
 The Budget view organizes plans by their **Group** field, initially alphabetically with **Ungrouped** last. Drag the handle beside a group heading to reorder groups, or the handle beside a thought to reorder it within its group. Focus a handle and press ↑ / ↓ for keyboard reordering. Orders save locally and sync to Google Sheets; filtering does not remove hidden thoughts from the saved order.
 
+Click a group name in the Budget view or the board's group header to rename it. Changes apply on Enter or when the input loses focus; Escape cancels. Every thought with that group name is updated, including hidden thoughts and thoughts outside the board. Clearing the name ungroups the thoughts; using another group's name merges them and keeps the destination group's board settings. Existing budgets in the destination stay first, followed by the renamed group's budgets in their saved order.
+
 `Attachments` (file metadata/index) and `AttachmentData` (data URL chunks) are created on the first file request. Each data URL is split into 40,000-character chunks to stay within Sheets' per-cell limit. Ordinary reads, writes, and cached snapshots contain metadata only; a separate authenticated file request reads the selected file's chunks. Both whitelisted accounts can retrieve shared attachments.
 
 Removing an attachment or deleting its thought removes its reference; stored file chunks are retained, with no automatic garbage collection yet. JSON export/import includes board layout and file metadata, **not file bytes**. Keep the backing spreadsheet for a complete backup. Unsynced local files exist only in the originating browser until upload succeeds.

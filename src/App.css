@@ -708,8 +708,10 @@ footer {
 .budget-group { position: relative; }
 .budget-reorder-hint { color: var(--theme-muted); font-size: 0.8rem; margin: 0; }
 .budget-group-heading { display: flex; align-items: center; gap: 6px; padding: 5px 0; position: relative; }
-.budget-group-heading h4 { margin: 0; overflow-wrap: anywhere; min-width: 0; }
-.budget-group-heading h4 .muted { font-weight: normal; }
+.budget-group-heading h4 { display: flex; flex: 1; align-items: center; gap: 6px; margin: 0; min-width: 0; }
+.budget-group-heading h4 .muted { flex-shrink: 0; white-space: nowrap; font-weight: normal; }
+.budget-group-heading .budget-group-name { display: block; flex: 0 1 auto; min-width: 0; width: auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; }
+.budget-group-heading input.budget-group-name { flex-basis: 320px; width: 320px; }
 .budget-drag-handle {
   display: grid; place-items: center; flex-shrink: 0; width: 30px; min-height: 36px; padding: 0;
   color: var(--theme-muted); cursor: grab; user-select: none; font-size: 20px; line-height: 1;
@@ -734,6 +736,7 @@ footer {
   padding: 4px 12px 8px;
   border-bottom: 1px solid #d6cdd2;
 }
+.budget-sortable-item:last-child .budget-progress { border-bottom: 0; }
 .budget-progress-caption {
   display: flex;
   flex-wrap: wrap;
@@ -1733,6 +1736,11 @@ details[open] > summary .attribute-awake { display:inline-block; }
 }
 .board-card-header button.board-color-swatch { border-radius:50%; }
 .board-group-controls strong { flex:1; min-width:0; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:17px; }
+.board-group-controls :is(button,input).board-group-name {
+  display: block; flex: 1 1 140px; min-width: 36px; max-width: 220px; min-height: 36px; padding: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 700; text-align: left; color: inherit;
+}
+.board-group-controls input.board-group-name { width: 180px; cursor: text; user-select: text; }
 .board-group-controls .board-group-drag, .board-card-header .board-move { display:grid; place-items:center; min-width:28px; min-height:36px; padding:2px; border:0; border-radius:0; background:transparent; box-shadow:none; color:#655e48; cursor:grab; touch-action:none; font-size:24px; }
 .board-group-controls .board-group-drag:is(:hover,:active,:disabled), .board-card-header .board-move:is(:hover,:active,:disabled) { border:0; background:transparent; box-shadow:none; }
 .board-group-controls .board-group-drag:active:not(:disabled), .board-card-header .board-move:active:not(:disabled) { cursor:grabbing; }

@@ -35,6 +35,7 @@ import Attachments from './Attachments';
 import {signedAmount,moneyAmountFields,trackingDraft} from './money-model';
 import BudgetList from './BudgetList';
 import {reorderBudgets} from './budget-order';
+import {renameThoughtGroup} from './thought-groups';
 import Checklist from './Checklist';
 import {setTaskDone} from './checklist-model';
 import {actualEntryChanges,sameValue} from './entry-changes';
@@ -722,6 +723,12 @@ function App() {
     try { decodeBoardViews(boardViews); return commit({...stateRef.current,boardViews,dirty:true}); }
     catch(error) { setError(message(error)); return false; }
   }
+  function renameGroup(source:string,name:string) {
+    const current=stateRef.current;
+    const next=renameThoughtGroup(current.entries,current.boardViews,source,name);
+    if(next.entries===current.entries&&next.boardViews===current.boardViews)return;
+    commit({...current,...next,dirty:true});
+  }
   async function signIn() {
     if (busyRef.current) return;
     setError("");
@@ -1401,7 +1408,7 @@ function App() {
                   </div>
                 </>
               )}
-              {view === "Board" && <Board entries={store.entries} boardViews={store.boardViews} onViewsChange={changeBoardViews} connection={store.connection} token={session?.token}
+              {view === "Board" && <Board entries={store.entries} boardViews={store.boardViews} onViewsChange={changeBoardViews} onRenameGroup={renameGroup} connection={store.connection} token={session?.token}
                 onCreate={entry => {if(change([...stateRef.current.entries, entry])) setEditor(entry);}}
                 onPin={(entry,item) => updateBoard(entry.id, items => [...items,item])}
                 onUpdate={(entryId,itemId,patch) => updateBoard(entryId,items => items.map(item => item.id===itemId ? {...item,...patch} : item))}
@@ -1675,7 +1682,7 @@ function App() {
                   </h3>
                   <section>
                     {planned.length
-                      ? <BudgetList entries={planned} transactions={transactions} row={row} onMove={move=>change(reorderBudgets(stateRef.current.entries,move))}/>
+                      ? <BudgetList entries={planned} transactions={transactions} row={row} onMove={move=>change(reorderBudgets(stateRef.current.entries,move))} onRenameGroup={renameGroup}/>
                       : empty(
                           "No budget thoughts",
                           "Add planned income and expenses, then link actual transactions.",

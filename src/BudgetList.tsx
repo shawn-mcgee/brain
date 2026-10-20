@@ -4,10 +4,11 @@ import type {Entry} from './domain';
 import {budgetGroups} from './budget-order';
 import type {BudgetMove} from './budget-order';
 import BudgetProgress from './BudgetProgress';
+import InlineText from './InlineText';
 
 type Drag={kind:'group'|'item';source:string;group?:string};
 type Drop={kind:'group'|'item';target:string;after:boolean};
-export default function BudgetList({entries,transactions,row,onMove}:{entries:Entry[];transactions:Entry[];row:(entry:Entry)=>ReactNode;onMove:(move:BudgetMove)=>void}) {
+export default function BudgetList({entries,transactions,row,onMove,onRenameGroup}:{entries:Entry[];transactions:Entry[];row:(entry:Entry)=>ReactNode;onMove:(move:BudgetMove)=>void;onRenameGroup:(source:string,name:string)=>void}) {
   const groups=budgetGroups(entries);
   const [drag,setDrag]=useState<Drag|null>(null),[drop,setDrop]=useState<Drop|null>(null);
   const activeDrag=useRef<Drag|null>(null);
@@ -48,7 +49,7 @@ export default function BudgetList({entries,transactions,row,onMove}:{entries:En
     {groups.map(group=><section key={group.name} className={`budget-group${marker('group',group.name)}${drag?.kind==='group'&&drag.source===group.name?' is-dragging':''}`} aria-label={`${group.name||'Ungrouped'} budgets`} onDragOver={event=>over(event,'group',group.name)} onDrop={event=>finish(event,'group',group.name)}>
       <div className="budget-group-heading">
         <span className="budget-drag-handle" draggable tabIndex={0} role="group" aria-roledescription="drag grip" aria-label={`Reorder ${group.name||'Ungrouped'} group`} title="Drag to reorder group, or use arrow keys" onDragStart={event=>start(event,{kind:'group',source:group.name})} onKeyDown={event=>keyboard(event,'group',group.name,groups.map(item=>item.name))}><span aria-hidden="true">⠿</span></span>
-        <h4>{group.name||'Ungrouped'} <span className="muted">· {group.entries.length}</span></h4>
+        <h4>{group.name?<InlineText value={group.name} label={`Rename group ${group.name}`} className="budget-group-name" onCommit={name=>onRenameGroup(group.name,name)}/>:'Ungrouped'} <span className="muted">· {group.entries.length}</span></h4>
       </div>
       <div className="entry-list">
         {group.entries.map(entry=><div key={entry.id} className={`budget-sortable-item${entry.color?` item-colored board-${entry.color}`:''}${marker('item',entry.id)}${drag?.kind==='item'&&drag.source===entry.id?' is-dragging':''}`} onDragOver={event=>over(event,'item',entry.id,group.name)} onDrop={event=>finish(event,'item',entry.id,group.name)}>
