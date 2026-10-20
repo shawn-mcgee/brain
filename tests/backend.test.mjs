@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import fs from "node:fs";
 import { blankEntry } from "../src/domain.ts";
+import {SYNC_API_VERSION} from '../src/backend-protocol.ts';
 import { newBoardItem } from '../src/board-model.ts';
 const source = fs.readFileSync(
   new URL("../apps-script/Code.gs", import.meta.url),
@@ -121,7 +122,7 @@ function backend() {
   vm.runInContext(source, context);
   const call = (body) =>
     JSON.parse(
-      context.doPost({ postData: { contents: JSON.stringify({apiVersion:8,...body}) } }),
+      context.doPost({ postData: { contents: JSON.stringify({apiVersion:SYNC_API_VERSION,...body}) } }),
     );
   return {
     call,
@@ -225,9 +226,9 @@ test("legacy Entries headers and rows migrate without losing entry data", () => 
   api.clearCache();
   const result=api.call({action:'read',token:'two'});
   assert.equal(result.ok,true);
-  assert.equal(result.apiVersion,8);
+  assert.equal(result.apiVersion,SYNC_API_VERSION);
   assert.deepEqual(result.entries,[entry]);
-  assert.deepEqual(Array.from(api.cells[0].slice(-7)),['name','where','color','tags','group','list','repeatUntil']);
+  assert.deepEqual(Array.from(api.cells[0].slice(-9)),['name','where','color','tags','group','list','repeatUntil','budgetOrder','budgetGroupOrder']);
 });
 
 test("attachments round-trip in chunks and ordinary sync returns metadata only", () => {
@@ -290,6 +291,34 @@ test('standalone calendar views share revision checks and cached reads without c
   assert.deepEqual(api.call({action:'read',token:'two'}).boardViews,[]);
 });
 
+test('legacy BoardViews item headers migrate without changing saved calendars or groups',()=>{
+  const api=backend(),views=[newBoardItem('calendar'),{...newBoardItem('group'),title:'Family',collapsed:true}];
+  const saved=api.call({action:'write',token:'one',revision:0,entries:[],boardViews:views});
+  assert.equal(saved.ok,true);
+  const cells=api.sheetCells('BoardViews'),rows=JSON.stringify(cells.slice(1));
+  cells[0]=['id','item'];api.clearCache();
+  const read=api.call({action:'read',token:'two'});
+  assert.equal(read.ok,true);assert.deepEqual(read.boardViews,views);
+  assert.equal(read.revision,saved.revision);
+  assert.deepEqual(Array.from(cells[0]),['id','thought']);
+  assert.equal(JSON.stringify(cells.slice(1)),rows);
+  api.clearCache();assert.deepEqual(api.call({action:'read',token:'one'}).boardViews,views);
+  // A write that omits boardViews must preserve legacy saved views too.
+  cells[0]=['id','item'];api.clearCache();
+  const written=api.call({action:'write',token:'one',revision:read.revision,entries:[]});
+  assert.equal(written.ok,true);assert.deepEqual(written.boardViews,views);
+  assert.equal(JSON.stringify(cells.slice(1)),rows);
+});
+
+test('unrecognized BoardViews headers still fail without overwriting saved views',()=>{
+  const api=backend();
+  assert.equal(api.call({action:'write',token:'one',revision:0,entries:[],boardViews:[newBoardItem('calendar')]}).ok,true);
+  const cells=api.sheetCells('BoardViews');cells[0]=['id','unexpected'];api.clearCache();
+  const before=JSON.stringify(cells);
+  assert.match(api.call({action:'read',token:'one'}).error,/BoardViews sheet headers have changed/);
+  assert.equal(JSON.stringify(cells),before);
+});
+
 test('backend persists palette, pins, and archives, and rejects invalid board settings',()=>{
   const api=backend(),entry={...blankEntry(),name:'Card',boardItems:[{...newBoardItem('sticky'),color:'orange',pinned:true,archived:true}]};
   assert.equal(api.call({action:'write',token:'one',revision:0,entries:[entry]}).ok,true);
@@ -348,14 +377,14 @@ test('outdated clients cannot write before upgrading, leaving existing board gro
   const api=backend(),group={...newBoardItem('group'),title:'Family',collapsed:true};
   assert.equal(api.call({action:'write',token:'one',revision:0,entries:[],boardViews:[group]}).ok,true);
   const reads=api.reads();
-  for(const apiVersion of [undefined,4,5]) {
+  for(const apiVersion of [undefined,4,5,8]) {
     assert.equal(api.call({action:'write',token:'two',apiVersion,revision:1,entries:[],boardViews:[]}).code,'UPGRADE_REQUIRED');
   }
   assert.equal(api.reads(),reads);
   const result=api.call({action:'read',token:'one'});
   assert.deepEqual(result.boardViews,[group]);
   assert.equal(result.revision,1);
-  assert.equal(result.apiVersion,8);
+  assert.equal(result.apiVersion,SYNC_API_VERSION);
 });
 
 
@@ -369,7 +398,7 @@ test('checklists migrate from 25 columns, round-trip, and validate line data',()
   // Simulate the previous schema and a cold cache.
   const legacy=backend();legacy.cells.push(api.cells[0].slice(0,25),api.cells[1].slice(0,25));
   const migrated=legacy.call({action:'read',token:'one'});
-  assert.equal(migrated.ok,true);assert.equal(migrated.apiVersion,8);
+  assert.equal(migrated.ok,true);assert.equal(migrated.apiVersion,SYNC_API_VERSION);
   assert.deepEqual(migrated.entries[0].list,[]);assert.equal(legacy.cells[0][25],'list');
   assert.equal(legacy.call({action:'write',token:'one',apiVersion:6,revision:migrated.revision,entries:[]}).code,'UPGRADE_REQUIRED');
 });
@@ -408,4 +437,21 @@ test('an empty 26-column sheet upgrades while altered headers remain protected',
   const before=structuredClone(altered.cells);
   assert.match(altered.call({action:'read',token:'one'}).error,/headers have changed/);
   assert.deepEqual(altered.cells,before);
+});
+
+test('budget order round-trips and version 8 Sheets migrate without losing budgets',()=>{
+  const api=backend(),entry={...blankEntry(),name:'Rent',group:'Home',budgetType:'expense',amount:1200,budgetOrder:2,budgetGroupOrder:1};
+  const written=api.call({action:'write',token:'one',revision:0,entries:[entry]});
+  assert.equal(written.ok,true);assert.deepEqual(written.entries,[entry]);
+  api.clearCache();
+  assert.deepEqual(api.call({action:'read',token:'two'}).entries,[entry]);
+  const legacy=backend();legacy.cells.push(api.cells[0].slice(0,27),api.cells[1].slice(0,27));
+  const migrated=legacy.call({action:'read',token:'one'});
+  assert.equal(migrated.ok,true);
+  assert.deepEqual(migrated.entries,[{...entry,budgetOrder:-1,budgetGroupOrder:-1}]);
+  assert.deepEqual(Array.from(legacy.cells[0].slice(27)),['budgetOrder','budgetGroupOrder']);
+  assert.equal(migrated.revision,1);
+  legacy.clearCache();assert.equal(legacy.call({action:'read',token:'one'}).revision,1);
+  const invalid=api.call({action:'write',token:'one',revision:written.revision,entries:[{...entry,budgetOrder:1.5}]});
+  assert.match(invalid.error,/budget order/);
 });

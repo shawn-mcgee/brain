@@ -19,6 +19,8 @@ export type Entry = {
   color: string;
   tags: string[];
   group: string;
+  budgetOrder: number;
+  budgetGroupOrder: number;
   task: boolean;
   completed: boolean;
   completedDates: string[];
@@ -57,6 +59,8 @@ export function blankEntry(): Entry {
     color: '',
     tags: [],
     group: '',
+    budgetOrder: -1,
+    budgetGroupOrder: -1,
     task: false,
     completed: false,
     completedDates: [],
@@ -334,6 +338,7 @@ export function sortTasks(entries: Entry[], today: string): Entry[] {
   return result;
 }
 export function validateEntry(e: Entry, entries: Entry[]): string {
+  if([e.budgetOrder,e.budgetGroupOrder].some(value=>!Number.isSafeInteger(value)||value< -1))return 'Invalid budget order.';
   if(!Array.isArray(e.list)||e.list.length>200||JSON.stringify(e.list).length>40000)return 'Keep lists under 200 lines and 40,000 characters.';
   const listIds=new Set<string>();
   for(const line of e.list){
@@ -407,7 +412,7 @@ export function decodeEntries(value: unknown): Entry[] {
     const legacy=raw.name===undefined && typeof raw.note==='string';
     const lines=legacy?raw.note.trim().split(/\r?\n/):[];
     const dates=raw.beginsOn&&!raw.endsOn?{endsOn:raw.beginsOn,endsAt:raw.beginsAt}:raw.endsOn&&!raw.beginsOn?{beginsOn:raw.endsOn,beginsAt:raw.endsAt}:{};
-    return {...raw,repeatUntil:raw.repeatUntil??'',...dates,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),list:raw.list??[],where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
+    return {...raw,budgetOrder:raw.budgetOrder??-1,budgetGroupOrder:raw.budgetGroupOrder??-1,repeatUntil:raw.repeatUntil??'',...dates,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),list:raw.list??[],where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
   });
   const strings = [
     "name",

@@ -33,6 +33,8 @@ import type { Store } from "./storage";
 import type { Connection } from './storage';
 import Attachments from './Attachments';
 import {signedAmount,moneyAmountFields,trackingDraft} from './money-model';
+import BudgetList from './BudgetList';
+import {reorderBudgets} from './budget-order';
 import Checklist from './Checklist';
 import {setTaskDone} from './checklist-model';
 import {actualEntryChanges,sameValue} from './entry-changes';
@@ -1143,7 +1145,7 @@ function App() {
             )}
           </span>
         )}
-        {e.budgetType&&<button type="button" className="secondary" disabled={busy} onClick={()=>trackBudget(e)}>Track {e.budgetType}</button>}
+        {e.budgetType&&<button type="button" className="secondary budget-track-button" disabled={busy} onClick={()=>trackBudget(e)}>Track {e.budgetType}</button>}
         {e.task&&<span className="task-anticipation" aria-hidden="true">{done?"\u{1F440} \u{2049}\uFE0F":"\u{1F440} \u{203C}\uFE0F"}</span>}
         <span className="entry-sweat" aria-hidden="true">
           <span>💧</span>
@@ -1671,24 +1673,9 @@ function App() {
                     Budget{" "}
                     <span className="muted">· {planned.length} thoughts</span>
                   </h3>
-                  <section className="entry-list">
+                  <section>
                     {planned.length
-                      ? planned.map((e) => (
-                          <div key={e.id}>
-                            {row(e)}
-                            <div className="budget-progress">
-                              <span>
-                                Actual linked {e.budgetType}:{" "}
-                                {money(
-                                  transactions
-                                    .filter((t) => t.budgetId === e.id)
-                                    .reduce((n, t) => n + t.amount, 0),
-                                )}
-                              </span>
-                              <span>Planned: {money(e.amount)}</span>
-                            </div>
-                          </div>
-                        ))
+                      ? <BudgetList entries={planned} transactions={transactions} row={row} onMove={move=>change(reorderBudgets(stateRef.current.entries,move))}/>
                       : empty(
                           "No budget thoughts",
                           "Add planned income and expenses, then link actual transactions.",
@@ -1772,16 +1759,12 @@ function App() {
           </div>
           <p className="completion-description">{completedTarget.repeat
             ? 'This occurrence is complete.'
-            : 'Keep it in your completed tasks, or delete it.'}</p>
+            : completedTarget.budgetType ? 'This budget task is complete.' : 'Keep it in your completed tasks, or delete it.'}</p>
           {completedTarget.budgetType && <div className="completion-tracking">
             <div>
               <strong>Track this {completedTarget.budgetType}?</strong>
               <p>Create a linked transaction with the planned amount. Review it before saving.</p>
             </div>
-            <button type="button" className="secondary" onClick={() => {
-              trackBudget(completedTarget, true);
-              setCompletedTarget(null);
-            }}>Track {completedTarget.budgetType}</button>
           </div>}
         </div>
         <div className="completion-actions">
@@ -1789,7 +1772,11 @@ function App() {
             removeConfirmed(completedTarget);
             setCompletedTarget(null);
           }}>Delete task</button>}
-          <button type="button" autoFocus className="primary" onClick={() => setCompletedTarget(null)}>Keep task</button>
+          <button type="button" autoFocus className={completedTarget.budgetType ? 'secondary' : 'primary'} onClick={() => setCompletedTarget(null)}>{completedTarget.budgetType ? 'Ignore transaction' : 'Keep task'}</button>
+          {completedTarget.budgetType && <button type="button" className={`primary budget-track-button${completedTarget.color?` item-colored board-${completedTarget.color}`:''}`} onClick={() => {
+            trackBudget(completedTarget, true);
+            setCompletedTarget(null);
+          }}>Track {completedTarget.budgetType}</button>}
         </div>
       </Modal>}
       {settings && (

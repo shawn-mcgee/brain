@@ -1,7 +1,24 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {blankEntry,decodeEntries,occurrences,todoOccurrences,nextTask,validateEntry} from '../src/domain.ts';
-import {moneyAmountFields,signedAmount,trackingDraft} from '../src/money-model.ts';
+import {budgetProgress,moneyAmountFields,signedAmount,trackingDraft} from '../src/money-model.ts';
+
+test('budget tracking measures linked progress in the plan direction and flags overflow',()=>{
+  for(const budgetType of ['income','expense']) {
+    const plan={...blankEntry(),budgetType,amount:100};
+    const linked=(amount,transactionType=budgetType)=>({...blankEntry(),budgetId:plan.id,transactionType,amount});
+    assert.deepEqual(budgetProgress(plan,[]),{tracked:0,opposing:0,percent:0,fill:0,exceeded:false});
+    assert.equal(budgetProgress(plan,[linked(40),{...linked(90),budgetId:'other'}]).percent,40);
+    assert.deepEqual(budgetProgress(plan,[linked(100)]),{tracked:100,opposing:0,percent:100,fill:100,exceeded:false});
+    assert.deepEqual(budgetProgress(plan,[linked(125)]),{tracked:125,opposing:0,percent:125,fill:100,exceeded:true});
+    const opposite=budgetType==='income'?'expense':'income';
+    assert.deepEqual(budgetProgress(plan,[linked(20),linked(50,opposite)]),{tracked:-30,opposing:50,percent:-30,fill:0,exceeded:false});
+    assert.equal(budgetProgress(plan,[linked(80),linked(10,opposite)]).tracked,70);
+    const zeroPlan={...plan,amount:0};
+    assert.deepEqual(budgetProgress(zeroPlan,[]),{tracked:0,opposing:0,percent:null,fill:0,exceeded:false});
+    assert.deepEqual(budgetProgress(zeroPlan,[linked(10)]),{tracked:10,opposing:0,percent:null,fill:100,exceeded:true});
+  }
+});
 
 test('legacy single-ended dates migrate to linked dates without losing optional times or real ranges',()=>{
   for(const side of ['begins','ends'])for(const time of ['','09:30']) {

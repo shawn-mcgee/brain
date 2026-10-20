@@ -262,6 +262,70 @@
   color:var(--thought-detail-ink);
 }
 
+/* Task toggles and native checklist boxes follow their thought's paper color. */
+:root[data-theme] :is(.entry-row.item-colored,.board-card,.thought-editor-colored) {
+  --thought-check-accent:color-mix(in srgb,var(--paper-deep) 65%,#25212c);
+  --thought-check-bg:color-mix(in srgb,var(--paper) 65%,white);
+}
+:root[data-theme] .entry-row.item-colored .task-check {
+  background:var(--thought-check-bg);
+  border-color:var(--thought-check-accent);
+  color:white;
+}
+:root[data-theme] .entry-row.item-colored .task-check.checked {
+  background:var(--thought-check-accent);
+  border-color:var(--thought-check-accent);
+}
+:root[data-theme] :is(.entry-row.item-colored,.board-card,.thought-editor-colored) input[type=checkbox] {
+  accent-color:var(--thought-check-accent);
+  color-scheme:light;
+}
+:root[data-theme] :is(.entry-row.item-colored,.board-card,.thought-editor-colored) :is(.task-check,input[type=checkbox]):focus-visible {
+  outline-color:var(--thought-check-accent);
+}
+
+/* Tracking actions use their thought's palette in rows and completion dialogs. */
+:root[data-theme] :is(.entry-row.item-colored .budget-track-button,.budget-track-button.item-colored) {
+  --track-accent:color-mix(in srgb,var(--paper-deep) 65%,#25212c);
+  background:color-mix(in srgb,var(--paper) 65%,white);
+  border-color:var(--paper-deep);
+  color:var(--paper-ink,#30232e);
+}
+:root[data-theme] :is(.entry-row.item-colored .budget-track-button,.budget-track-button.item-colored):hover:not(:disabled) {
+  background:var(--paper-deep);
+}
+:root[data-theme] .budget-track-button.item-colored.primary {
+  background:var(--track-accent);
+  border-color:var(--track-accent);
+  color:white;
+}
+:root[data-theme] .budget-track-button.item-colored.primary:hover:not(:disabled) {
+  background:color-mix(in srgb,var(--track-accent) 85%,black);
+}
+:root[data-theme] :is(.entry-row.item-colored .budget-track-button,.budget-track-button.item-colored):focus-visible {
+  outline-color:var(--track-accent);
+}
+
+/* Budget grips and tracking share the thought's paper palette in either theme. */
+:root[data-theme] .budget-sortable-item.item-colored {
+  --theme-text:var(--paper-ink,#30232e);
+  --theme-muted:var(--paper-muted,#4e4052);
+  --theme-border:var(--paper-deep);
+  --theme-hover:color-mix(in srgb,var(--paper) 65%,white);
+  --theme-accent:color-mix(in srgb,var(--paper-deep) 65%,#25212c);
+  background:var(--paper);
+  color:var(--theme-text);
+}
+:root[data-theme] .budget-sortable-item.item-colored .budget-drag-handle { color:var(--theme-accent); }
+:root[data-theme] .budget-sortable-item.item-colored .budget-drag-handle:hover { color:var(--theme-text); }
+:root[data-theme] .budget-sortable-item.item-colored .budget-drag-handle:focus-visible { outline-color:var(--theme-accent); }
+:root[data-theme] .budget-sortable-item.item-colored .budget-progress { color:var(--theme-text); border-color:var(--theme-border); }
+:root[data-theme] .budget-sortable-item.item-colored .budget-progress .muted { color:var(--theme-muted); }
+:root[data-theme] .budget-sortable-item.item-colored .budget-progress-warning { color:#8c2c19; }
+:root[data-theme] .budget-sortable-item.item-colored .budget-progress.is-exceeded .budget-progress-fill {
+  background:repeating-linear-gradient(120deg,var(--theme-accent) 0 5px,var(--paper-deep) 5px 10px);
+}
+
 /* The editor previews the selected thought paper as soon as its swatch changes. */
 :root[data-theme] .thought-editor-colored {
   --theme-surface:color-mix(in srgb,var(--paper) 65%,white);
