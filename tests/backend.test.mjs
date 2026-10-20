@@ -103,7 +103,11 @@ function backend() {
       openById: () => {
         reads++;
         return {
-          getSheetByName: name => sheets.get(name)?.instance || null,
+          getSheetByName: name => {
+            // Seeded cells represent an existing Entries sheet, not a new sheet.
+            if(name==='Entries'&&cells.length&&!sheets.has(name))sheets.set(name,{rows:cells,instance:makeSheet(cells)});
+            return sheets.get(name)?.instance || null;
+          },
           insertSheet: name => { const rows=name==="Entries"?cells:[]; const instance=makeSheet(rows); sheets.set(name,{rows,instance}); return instance; },
         };
       },
@@ -117,7 +121,7 @@ function backend() {
   vm.runInContext(source, context);
   const call = (body) =>
     JSON.parse(
-      context.doPost({ postData: { contents: JSON.stringify({apiVersion:7,...body}) } }),
+      context.doPost({ postData: { contents: JSON.stringify({apiVersion:8,...body}) } }),
     );
   return {
     call,
@@ -221,9 +225,9 @@ test("legacy Entries headers and rows migrate without losing entry data", () => 
   api.clearCache();
   const result=api.call({action:'read',token:'two'});
   assert.equal(result.ok,true);
-  assert.equal(result.apiVersion,7);
+  assert.equal(result.apiVersion,8);
   assert.deepEqual(result.entries,[entry]);
-  assert.deepEqual(Array.from(api.cells[0].slice(-6)),['name','where','color','tags','group','list']);
+  assert.deepEqual(Array.from(api.cells[0].slice(-7)),['name','where','color','tags','group','list','repeatUntil']);
 });
 
 test("attachments round-trip in chunks and ordinary sync returns metadata only", () => {
@@ -351,21 +355,57 @@ test('outdated clients cannot write before upgrading, leaving existing board gro
   const result=api.call({action:'read',token:'one'});
   assert.deepEqual(result.boardViews,[group]);
   assert.equal(result.revision,1);
-  assert.equal(result.apiVersion,7);
+  assert.equal(result.apiVersion,8);
 });
 
 
 test('checklists migrate from 25 columns, round-trip, and validate line data',()=>{
   const api=backend(),entry={...blankEntry(),name:'Checklist',task:true,list:[{id:'line',text:'Wash dishes',completed:false,completedDates:[]}]};
   const write=api.call({action:'write',token:'one',revision:0,entries:[entry]});
-  assert.equal(write.ok,true);assert.equal(api.cells[0].at(-1),'list');
+  assert.equal(write.ok,true);assert.equal(api.cells[0][25],'list');
   assert.equal(api.call({action:'read',token:'one'}).entries[0].list[0].text,'Wash dishes');
   const bad={...entry,list:[{...entry.list[0],completed:'yes'}]};
   assert.equal(api.call({action:'write',token:'one',revision:write.revision,entries:[bad]}).ok,false);
   // Simulate the previous schema and a cold cache.
   const legacy=backend();legacy.cells.push(api.cells[0].slice(0,25),api.cells[1].slice(0,25));
   const migrated=legacy.call({action:'read',token:'one'});
-  assert.equal(migrated.ok,true);assert.equal(migrated.apiVersion,7);
+  assert.equal(migrated.ok,true);assert.equal(migrated.apiVersion,8);
   assert.deepEqual(migrated.entries[0].list,[]);assert.equal(legacy.cells[0][25],'list');
   assert.equal(legacy.call({action:'write',token:'one',apiVersion:6,revision:migrated.revision,entries:[]}).code,'UPGRADE_REQUIRED');
+});
+
+
+test('When and repeat limits migrate from version 7 Sheets and round-trip',()=>{
+  const api=backend(),entry={...blankEntry(),name:'Plan',beginsOn:'2026-10-19',repeat:'Daily',repeatUntil:'2026-10-21'};
+  const written=api.call({action:'write',token:'one',revision:0,entries:[entry]});
+  assert.equal(written.ok,true);
+  assert.equal(written.entries[0].endsOn,entry.beginsOn);
+  assert.equal(written.entries[0].repeatUntil,'2026-10-21');
+  const cold=backend();cold.cells.push(api.cells[0].slice(0,26),api.cells[1].slice(0,26));
+  const migrated=cold.call({action:'read',token:'one'});
+  assert.equal(migrated.ok,true);assert.equal(migrated.entries[0].repeatUntil,'');
+  assert.equal(cold.cells[0][26],'repeatUntil');
+  assert.equal(cold.cells[1][26],JSON.stringify(''));
+  assert.deepEqual(Array.from(cold.cells[1].slice(0,26)),Array.from(api.cells[1].slice(0,26)));
+  assert.equal(migrated.revision,1);
+  cold.clearCache();
+  assert.equal(cold.call({action:'read',token:'one'}).revision,migrated.revision);
+  assert.equal(cold.call({action:'write',token:'one',revision:0,entries:migrated.entries}).code,'CONFLICT');
+  const invalid=api.call({action:'write',token:'one',revision:written.revision,entries:[{...entry,repeatUntil:'2026-10-18'}]});
+  assert.equal(invalid.ok,false);
+  assert.equal(api.call({action:'write',token:'one',apiVersion:7,revision:written.revision,entries:[]}).code,'UPGRADE_REQUIRED');
+});
+
+
+test('an empty 26-column sheet upgrades while altered headers remain protected',()=>{
+  const seed=backend();assert.equal(seed.call({action:'read',token:'one'}).ok,true);
+  const oldHeaders=seed.cells[0].slice(0,26);
+  const empty=backend();empty.cells.push([...oldHeaders]);
+  const upgraded=empty.call({action:'read',token:'one'});
+  assert.equal(upgraded.ok,true);assert.deepEqual(upgraded.entries,[]);
+  assert.equal(empty.cells[0][26],'repeatUntil');
+  const altered=backend();altered.cells.push([...oldHeaders]);altered.cells[0][25]='renamed list';
+  const before=structuredClone(altered.cells);
+  assert.match(altered.call({action:'read',token:'one'}).error,/headers have changed/);
+  assert.deepEqual(altered.cells,before);
 });

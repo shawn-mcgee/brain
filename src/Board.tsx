@@ -88,7 +88,6 @@ export default function Board({entries,boardViews,onViewsChange,connection,token
       const box=element.getBoundingClientRect();
       const point={x:(mouse?.x??event.clientX)-box.left-element.clientLeft,y:(mouse?.y??event.clientY)-box.top-element.clientTop};
       setView(current=>{
-        if(!event.ctrlKey&&!event.metaKey)return{...current,x:current.x-event.deltaX,y:current.y-event.deltaY};
         return zoomAtPoint(current,point,wheelZoomFactor(event.deltaY,event.deltaMode,element.clientHeight));
       });
     };
@@ -104,7 +103,7 @@ export default function Board({entries,boardViews,onViewsChange,connection,token
     const point=center(cardKind),item={...newBoardItem(cardKind,point.x,point.y,maxZ),...(kind==='list'?{showList:true,color:'green'}:{})};
     setError('');
     if(kind==='calendar'&&!existing){if(boardViews.length>=100){setError('The board can have up to 100 calendar views. Remove an existing view first.');return;}onViewsChange([...boardViews,item]);}
-    else if(existing){if(isOnBoard(existing))return;if(existing.boardItems.length>=100){setError('This item already has 100 board items.');return;}onPin(existing,item);}
+    else if(existing){if(isOnBoard(existing))return;if(existing.boardItems.length>=100){setError('This thought already has 100 board cards.');return;}onPin(existing,item);}
     else {const entry={...blankEntry(),name:kind==='list'?'New list':kind==='polaroid'?'Photo':'New note',boardItems:[item]};onCreate(entry);}
     setPanel(null);
   }
@@ -139,7 +138,7 @@ export default function Board({entries,boardViews,onViewsChange,connection,token
       <button ref={addButton} type="button" className="board-control-button" aria-label="Add to board" title="Add to board" aria-expanded={panel==='add'} aria-controls={`${panelId}-add`} onClick={()=>setPanel(current=>current==='add'?null:'add')}><span aria-hidden="true">{'\u{2795}'}</span></button>
       {panel==='view'&&<div id={`${panelId}-view`} className="board-control-panel" role="group" aria-label="View controls">
         <label className="board-zoom-picker">Zoom<select aria-label="Zoom percent" value={Math.round(view.zoom*100)} onChange={event=>zoomBy(Number(event.target.value)/100/view.zoom)}>{[...new Set([25,50,75,100,125,150,200,Math.round(view.zoom*100)])].sort((a,b)=>a-b).map(percent=><option key={percent} value={percent}>{percent}%</option>)}</select></label>
-        <button type="button" className="secondary" onClick={fit}>Fit items</button>
+        <button type="button" className="secondary" onClick={fit}>Fit thoughts</button>
         <button type="button" className="secondary" onClick={recenter}>Recenter</button>
       </div>}
       {panel==='add'&&<div id={`${panelId}-add`} className="board-control-panel board-add-menu" role="group" aria-label="Add to board">
@@ -154,7 +153,7 @@ export default function Board({entries,boardViews,onViewsChange,connection,token
     {pickerOpen&&<BoardInventoryPicker entries={entries} onPin={entry=>add('sticky',entry)} onClose={()=>{setPickerOpen(false);requestAnimationFrame(()=>addButton.current?.focus());}}/>}
     {error&&<p className="error" role="alert">{error}</p>}
     <div ref={viewport} tabIndex={0} className="board-viewport" aria-label="Board canvas. Drag to pan, pinch to zoom, or use arrow keys." onPointerDownCapture={touchStart} onPointerMoveCapture={touchMove} onPointerUpCapture={touchEnd} onPointerCancelCapture={touchEnd} onClickCapture={event=>{if(event.timeStamp<suppressClickUntil.current){event.preventDefault();event.stopPropagation();}}} style={{backgroundPosition:`${view.x}px ${view.y}px`,backgroundSize:`${24*view.zoom}px ${24*view.zoom}px`}} onPointerDown={event=>{if(!(event.target as HTMLElement).closest('.board-card, .board-group-controls'))begin(event,'pan')}} onPointerMove={move} onPointerUp={event=>finish(event)} onPointerCancel={event=>finish(event,true)} onKeyDown={event=>{if(event.target!==event.currentTarget)return;const delta=event.shiftKey?100:40;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();setView(v=>({...v,x:v.x+(event.key==='ArrowLeft'?delta:event.key==='ArrowRight'?-delta:0),y:v.y+(event.key==='ArrowUp'?delta:event.key==='ArrowDown'?-delta:0)}))}}}>
-      {!all.length&&<div className="board-empty"><span aria-hidden="true">📌</span><h2>No items pinned</h2><p>Create a board item or pin an existing entry.</p></div>}
+      {!all.length&&<div className="board-empty"><span aria-hidden="true">📌</span><h2>No thoughts pinned</h2><p>Create a board thought or pin an existing entry.</p></div>}
       <div className="board-world" style={{transform:`translate(${view.x}px,${view.y}px) scale(${view.zoom})`}}>
         {groups.map(group=><div key={group.name} className={`board-group${group.state?.collapsed?' is-collapsed':''}`} style={{left:group.bounds.x,top:group.bounds.y,width:group.bounds.width,height:group.state?.collapsed?0:group.bounds.height}}>
           <div className="board-group-controls" style={{zIndex:maxZ+1}} role="group" tabIndex={group.state?.pinned?-1:0} data-pinned={!!group.state?.pinned} aria-label={`Group ${group.name}. Drag header or use arrow keys to move.`} onPointerDown={event=>{if((event.target as Element).closest('button,input,select,textarea,a,summary,[contenteditable=true]')||event.button!==0||group.state?.pinned)return;event.preventDefault();event.stopPropagation();event.currentTarget.setPointerCapture(event.pointerId);groupGesture.current={pointer:event.pointerId,startX:event.clientX,startY:event.clientY,cards:group.cards,points:group.cards.map(card=>({id:card.item.id,x:card.item.x,y:card.item.y}))};}} onPointerMove={move} onPointerUp={event=>finish(event)} onPointerCancel={event=>finish(event,true)} onKeyDown={event=>{if(event.target!==event.currentTarget||group.state?.pinned||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();event.stopPropagation();const d=event.shiftKey?50:10;applyLayout(group.cards,translateCards(group.cards.map(card=>card.item),event.key==='ArrowLeft'?-d:event.key==='ArrowRight'?d:0,event.key==='ArrowUp'?-d:event.key==='ArrowDown'?d:0));}}>

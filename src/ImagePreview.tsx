@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 
-export default function ImagePreview({source,name,onClose}:{source:string;name:string;onClose:()=>void}) {
+export default function ImagePreview({source,name,itemName,note='',onClose}:{source:string;name:string;itemName?:string;note?:string;onClose:()=>void}) {
   const dialog=useRef<HTMLDialogElement>(null),viewport=useRef<HTMLDivElement>(null);
   const image=useRef<HTMLImageElement>(null);
   const drag=useRef<{id:number;x:number;y:number}|null>(null);
@@ -27,7 +27,7 @@ export default function ImagePreview({source,name,onClose}:{source:string;name:s
     area.addEventListener('wheel',wheel,{passive:false});return()=>area.removeEventListener('wheel',wheel);
   },[]);
   // Portals still bubble through the React tree, including the board's gestures.
-  return createPortal(<dialog ref={dialog} className="image-preview" aria-label={`Image preview: ${name}`}
+  return createPortal(<dialog ref={dialog} className="image-preview" aria-label={`Image preview: ${itemName || name}`}
     onPointerDown={event=>event.stopPropagation()} onPointerMove={event=>event.stopPropagation()}
     onPointerUp={event=>event.stopPropagation()} onPointerCancel={event=>event.stopPropagation()}
     onLostPointerCapture={event=>event.stopPropagation()} onWheel={event=>event.stopPropagation()}
@@ -35,7 +35,7 @@ export default function ImagePreview({source,name,onClose}:{source:string;name:s
     onDoubleClick={event=>event.stopPropagation()}
     onCancel={event=>{event.stopPropagation();onClose();}}
     onClick={event=>{event.stopPropagation();if(event.target===event.currentTarget)onClose();}}>
-    <div className="image-preview-header"><strong title={name}>{name}</strong><button type="button" autoFocus aria-label="Close image preview" onClick={onClose}>✕</button></div>
+    <div className="image-preview-header"><div className="image-preview-titles"><h2>{itemName || name}</h2><small>{name}</small></div><button type="button" autoFocus aria-label="Close image preview" onClick={onClose}>✕</button></div>
     <div className="image-preview-viewport" ref={viewport} tabIndex={0} aria-label="Image. Drag to pan; scroll to zoom. Arrow keys pan; plus and minus zoom."
       onPointerDown={event=>{if(event.button!==0)return;event.preventDefault();event.currentTarget.focus();event.currentTarget.setPointerCapture(event.pointerId);drag.current={id:event.pointerId,x:event.clientX,y:event.clientY};}}
       onPointerMove={event=>{const previous=drag.current;if(!previous||previous.id!==event.pointerId)return;const dx=event.clientX-previous.x,dy=event.clientY-previous.y;drag.current={id:event.pointerId,x:event.clientX,y:event.clientY};setView(old=>({...old,x:old.x+dx,y:old.y+dy}));}}
@@ -43,6 +43,7 @@ export default function ImagePreview({source,name,onClose}:{source:string;name:s
       onKeyDown={event=>{const moves:Record<string,[number,number]>={ArrowLeft:[40,0],ArrowRight:[-40,0],ArrowUp:[0,40],ArrowDown:[0,-40]};if(moves[event.key]){event.preventDefault();const [x,y]=moves[event.key];setView(old=>({...old,x:old.x+x,y:old.y+y}));}else if(['+','=','-'].includes(event.key)){event.preventDefault();zoom(event.key==='-'?1/1.25:1.25);}}}>
       <img ref={image} src={source} alt={name} draggable={false} onLoad={()=>{setLoaded(true);fit();}} style={{visibility:loaded?'visible':'hidden',transform:`translate(${view.x}px,${view.y}px) scale(${view.scale})`}}/>
     </div>
+    {note.trim()&&<div className="image-preview-note" tabIndex={0} aria-label="Thought note">{note}</div>}
     <div className="image-preview-controls"><button type="button" aria-label="Zoom out" onClick={()=>zoom(1/1.25)}>−</button><output aria-label="Zoom">{Math.round(view.scale*100)}%</output><button type="button" aria-label="Zoom in" onClick={()=>zoom(1.25)}>+</button><button type="button" onClick={fit}>Fit</button><button type="button" onClick={()=>{const area=viewport.current,picture=image.current;if(area&&picture)setView({scale:1,x:(area.clientWidth-picture.naturalWidth)/2,y:(area.clientHeight-picture.naturalHeight)/2});}}>100%</button></div>
   </dialog>,document.body);
 }

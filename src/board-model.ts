@@ -7,7 +7,7 @@ export function newBoardItem(kind: BoardKind, x=0, y=0, z=1): BoardItem {
   return {id:crypto.randomUUID(),kind,x,y,width:kind==='calendar'?840:320,height:kind==='calendar'?850:360,z,color:kind==='calendar'?'blue':kind==='polaroid'?'white':'yellow',pinned:false,archived:false,...(kind==='calendar'?{title:'Calendar',calendarPeriod:'month' as const,calendarDynamic:true}:{})};
 }
 export function validateBoardFields(boardItems: unknown, attachments: unknown): string {
-  if (!Array.isArray(boardItems) || boardItems.length>100 || !Array.isArray(attachments) || attachments.length>20) return 'Invalid board items or attachments.';
+  if (!Array.isArray(boardItems) || boardItems.length>100 || !Array.isArray(attachments) || attachments.length>20) return 'Invalid board cards or attachments.';
   const ids=new Set();
   for (const item of boardItems) {
     if (!item || typeof item.id!=='string' || !item.id || item.id.length>100 || ids.has(item.id) || !['sticky','polaroid','calendar','group'].includes(item.kind) || !boardColors.includes(item.color) || !['x','y','width','height','z'].every(k=>Number.isFinite(item[k]) && Math.abs(item[k])<=10000000) || item.width<220 || item.width>1200 || item.height<180 || item.height>1200) return 'Invalid board layout.';
@@ -19,7 +19,7 @@ export function validateBoardFields(boardItems: unknown, attachments: unknown): 
     if (!file || typeof file.id!=='string' || !/^[\w-]{1,100}$/.test(file.id) || ids.has(file.id) || typeof file.name!=='string' || !file.name || file.name.length>500 || typeof file.type!=='string' || !/^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/.test(file.type) || !Number.isInteger(file.size) || file.size<0 || file.size>MAX_FILE_SIZE || typeof file.createdAt!=='string' || !Number.isFinite(Date.parse(file.createdAt)) || 'dataUrl' in file || 'data' in file) return 'Invalid attachment metadata.';
     ids.add(file.id);
   }
-  if(JSON.stringify(boardItems).length>40000 || JSON.stringify(attachments).length>40000) return 'Item metadata is too large.';
+  if(JSON.stringify(boardItems).length>40000 || JSON.stringify(attachments).length>40000) return 'Thought metadata is too large.';
   return '';
 }
 // Merge item IDs individually so two people can pin/move different cards or add

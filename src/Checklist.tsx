@@ -10,13 +10,13 @@ export default function Checklist({entry,entries,date,onChange,editable=false,di
     try{if(next.task&&isDone(next,date||next.beginsOn||next.endsOn)&&!isDone(entry,date||entry.beginsOn||entry.endsOn))assertCanComplete(next,entries,date);setError('');onChange(next);}catch(cause){setError(cause instanceof Error?cause.message:'Could not update list.');}
   }
   function add(){if(!text.trim()||entry.list.length>=200)return;commit(reconcileList({...entry,list:[...entry.list,{id:crypto.randomUUID(),text:text.trim(),completed:false,completedDates:entry.repeat?entry.completedDates.filter(day=>day!==checklistDate(entry,date)):[]}]}));setText('');}
-  return <div className="item-checklist" role="group" aria-label={`${entry.name||'Item'} list`}>
+  return <div className="item-checklist" role="group" aria-label={`${entry.name||'Thought'} list`}>
     {entry.list.map(line=><div className="checklist-line" key={line.id}>
       <input type="checkbox" aria-label={line.text} checked={listItemDone(entry,line,date)} disabled={disabled} onChange={event=>commit(setListItemDone(entry,line.id,event.target.checked,date))}/>
-      {editable?inline?<InlineText label="Edit list item" value={line.text} maxLength={1000} required className={listItemDone(entry,line,date)?'is-complete':''} onCommit={text=>onChange({...entry,list:entry.list.map(item=>item.id===line.id?{...item,text}:item)})}/>:<input aria-label="List item text" value={line.text} maxLength={1000} onChange={event=>onChange({...entry,list:entry.list.map(item=>item.id===line.id?{...item,text:event.target.value}:item)})}/>:<span className={listItemDone(entry,line,date)?'is-complete':''}>{line.text}</span>}
+      {editable?inline?<InlineText label="Edit list line" value={line.text} maxLength={1000} required className={listItemDone(entry,line,date)?'is-complete':''} onCommit={text=>onChange({...entry,list:entry.list.map(item=>item.id===line.id?{...item,text}:item)})}/>:<input aria-label="List line text" value={line.text} maxLength={1000} onChange={event=>onChange({...entry,list:entry.list.map(item=>item.id===line.id?{...item,text:event.target.value}:item)})}/>:<span className={listItemDone(entry,line,date)?'is-complete':''}>{line.text}</span>}
       {editable&&<button type="button" aria-label={`Remove ${line.text}`} onClick={()=>commit(reconcileList({...entry,list:entry.list.filter(item=>item.id!==line.id)}))}>✖️</button>}
     </div>)}
-    {editable&&<div className="checklist-add"><input aria-label="New list item" placeholder="Add a list item" maxLength={1000} value={text} onChange={event=>setText(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();add();}}}/><button type="button" disabled={!text.trim()||entry.list.length>=200} onClick={add}>Add</button></div>}
+    {editable&&<div className="checklist-add"><input aria-label="New list line" placeholder="Add a list line" maxLength={1000} value={text} onChange={event=>setText(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();add();}}}/><button type="button" disabled={!text.trim()||entry.list.length>=200} onClick={add}>Add</button></div>}
     {error&&<p role="alert" className="error">{error}</p>}
   </div>;
 }

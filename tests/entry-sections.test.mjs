@@ -1,118 +1,35 @@
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { blankEntry, validateEntry } from "../src/domain.ts";
-import {
-  initialEntrySections,
-  availableEntrySections,
-  removeEntrySection,
-  initializeEntrySection,
-} from "../src/entry-sections.ts";
-test('adding either date section copies the other date and optional time',()=>{
-  for(const time of ['', '09:30']) {
-    const due={...blankEntry(),name:'Appointment',endsOn:'2026-10-22',endsAt:time};
-    const begins=initializeEntrySection(due,'begins');
-    assert.equal(begins.beginsOn,due.endsOn);
-    assert.equal(begins.beginsAt,time);
-    assert.equal(due.beginsOn,'');
-    assert.equal(validateEntry(begins,[begins]),'');
-    const start={...blankEntry(),name:'Appointment',beginsOn:'2026-10-22',beginsAt:time};
-    const ends=initializeEntrySection(start,'ends');
-    assert.equal(ends.endsOn,start.beginsOn);
-    assert.equal(ends.endsAt,time);
-    assert.equal(start.endsOn,'');
-    assert.equal(validateEntry(ends,[ends]),'');
-  }
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {blankEntry,dateKey} from '../src/domain.ts';
+import {initialEntrySections,availableEntrySections,removeEntrySection,initializeEntrySection,sectionOrder} from '../src/entry-sections.ts';
+
+test('When defaults to today with linked dates and optional times',()=>{
+  const empty=blankEntry(),entry=initializeEntrySection(empty,'when');
+  assert.equal(entry.beginsOn,dateKey(new Date()));assert.equal(entry.endsOn,entry.beginsOn);
+  assert.equal(entry.beginsAt,'');assert.equal(entry.endsAt,'');assert.equal(empty.beginsOn,'');
 });
-test('adding the first date section leaves values blank and readding copies current values',()=>{
-  assert.equal(initializeEntrySection(blankEntry(),'begins').beginsOn,'');
-  const entry={...blankEntry(),name:'Plan',beginsOn:'2026-10-19',endsOn:'2026-10-20',endsAt:'15:00'};
-  const removed=removeEntrySection(entry,['begins','ends'],'begins');
-  const readded=initializeEntrySection({...removed.entry,endsOn:'2026-10-23'},'begins');
-  assert.equal(readded.beginsOn,'2026-10-23');
-  assert.equal(readded.beginsAt,'15:00');
+test('existing dates restore one When section and removing it clears repetition and history',()=>{
+  const entry={...blankEntry(),name:'Plan',beginsOn:'2026-10-19',endsOn:'2026-10-21',repeat:'Weekly',repeatUntil:'2026-11-01',completedDates:['2026-10-19'],list:[{id:'line',text:'Prepare',completed:false,completedDates:['2026-10-19']}]};
+  assert.deepEqual(initialEntrySections(entry),['list','when','repeat']);
+  const removed=removeEntrySection(entry,['when','repeat'],'when');
+  assert.deepEqual(removed.sections,[]);
+  for(const field of ['beginsOn','endsOn','beginsAt','endsAt','repeat','repeatUntil'])assert.equal(removed.entry[field],'');
+  assert.deepEqual(removed.entry.completedDates,[]);assert.deepEqual(removed.entry.list[0].completedDates,[]);
 });
-test('notes are optional removable enhancements that leave the name intact',()=>{
-  const entry={...blankEntry(),name:'Shopping',note:'Milk and eggs'};
-  assert.ok(initialEntrySections(entry).includes('note'));
-  const removed=removeEntrySection(entry,['note'],'note');
-  assert.equal(removed.entry.name,'Shopping');
-  assert.equal(removed.entry.note,'');
-  assert.equal(validateEntry(removed.entry,[removed.entry]),'');
-  assert.ok(availableEntrySections(removed.sections).includes('note'));
+test('removing Repeats keeps dates and clears its limit',()=>{
+  const entry={...blankEntry(),beginsOn:'2026-10-19',endsOn:'2026-10-19',repeat:'Daily',repeatUntil:'2026-11-01'};
+  const result=removeEntrySection(entry,['when','repeat'],'repeat');
+  assert.deepEqual(result.sections,['when']);assert.equal(result.entry.beginsOn,entry.beginsOn);assert.equal(result.entry.repeatUntil,'');
 });
-test("repeat availability follows attached time sections, including empty ones", () => {
-  assert.equal(availableEntrySections([]).includes("repeat"), false);
-  assert.equal(availableEntrySections(["begins"]).includes("repeat"), true);
-  assert.equal(availableEntrySections(["ends"]).includes("repeat"), true);
-  assert.equal(
-    availableEntrySections(["begins", "repeat"]).includes("repeat"),
-    false,
-  );
-  const entry = { ...blankEntry(), name: "Plan", repeat: "Weekly" };
-  assert.match(validateEntry(entry, []), /date/);
+test('attribute buttons follow requested order and conditional availability',()=>{
+  assert.deepEqual(availableEntrySections([]),sectionOrder.filter(section=>!['repeat','requires'].includes(section)));
+  assert.ok(availableEntrySections(['when']).includes('repeat'));
+  assert.ok(availableEntrySections(['task']).includes('requires'));
+  const entry={...blankEntry(),task:true,requires:['other']};
+  const removed=removeEntrySection(entry,['task','requires'],'task');
+  assert.deepEqual(removed.sections,[]);assert.deepEqual(removed.entry.requires,[]);
 });
-test("removing one time section retains the other and repetition", () => {
-  const entry = {
-    ...blankEntry(),
-    name: "Trip",
-    beginsOn: "2026-10-19",
-    beginsAt: "09:00",
-    endsOn: "2026-10-20",
-    endsAt: "10:00",
-    repeat: "Weekly",
-    completedDates: ["2026-10-19"],
-  };
-  const result = removeEntrySection(
-    entry,
-    ["begins", "ends", "repeat"],
-    "begins",
-  );
-  assert.deepEqual(result.sections, ["ends", "repeat"]);
-  assert.equal(result.entry.beginsOn, "");
-  assert.equal(result.entry.beginsAt, "");
-  assert.equal(result.entry.endsOn, "2026-10-20");
-  assert.equal(result.entry.endsAt, "10:00");
-  assert.equal(result.entry.repeat, "Weekly");
-  assert.equal(entry.beginsOn, "2026-10-19");
-});
-test("removing the final time section removes and clears repeat state", () => {
-  for (const section of ["begins", "ends"]) {
-    const entry = {
-      ...blankEntry(),
-      name: "Plan",
-      beginsOn: section === "begins" ? "2026-10-19" : "",
-      endsOn: section === "ends" ? "2026-10-19" : "",
-      repeat: "Daily",
-      completedDates: ["2026-10-19"],
-    };
-    const result = removeEntrySection(
-      entry,
-      ["who", section, "repeat"],
-      section,
-    );
-    assert.deepEqual(result.sections, ["who"]);
-    assert.equal(result.entry.repeat, "");
-    assert.deepEqual(result.entry.completedDates, []);
-    assert.equal(
-      availableEntrySections(result.sections).includes("repeat"),
-      false,
-    );
-  }
-});
-test("editing existing dated entries restores individual sections and removing repeat keeps dates", () => {
-  const entry = {
-    ...blankEntry(),
-    endsOn: "2026-10-19",
-    endsAt: "09:30",
-    repeat: "Monthly",
-  };
-  assert.deepEqual(initialEntrySections(entry), ["ends", "repeat"]);
-  const result = removeEntrySection(entry, ["ends", "repeat"], "repeat");
-  assert.deepEqual(result.sections, ["ends"]);
-  assert.equal(result.entry.endsOn, "2026-10-19");
-  assert.equal(result.entry.endsAt, "09:30");
-  assert.equal(
-    availableEntrySections(result.sections).includes("repeat"),
-    true,
-  );
+test('removing Note leaves the name intact',()=>{
+  const result=removeEntrySection({...blankEntry(),name:'Shopping',note:'Milk'},['note'],'note');
+  assert.equal(result.entry.name,'Shopping');assert.equal(result.entry.note,'');
 });

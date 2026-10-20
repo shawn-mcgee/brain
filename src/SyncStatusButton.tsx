@@ -1,15 +1,27 @@
 import {useEffect,useId,useRef,useState} from 'react';
 
 export default function SyncStatusButton({status,state}:{status:string;state:string}){
-  const [open,setOpen]=useState(false),container=useRef<HTMLDivElement>(null);
-  const id=useId();
+  const [pinned,setPinned]=useState(false),[hovered,setHovered]=useState(false),[focused,setFocused]=useState(false);
+  const container=useRef<HTMLButtonElement>(null),id=useId();
+  const expanded=pinned||hovered||focused;
   useEffect(()=>{
-    if(!open)return;
-    const dismiss=(event:PointerEvent)=>{if(!container.current?.contains(event.target as Node))setOpen(false);};
-    document.addEventListener('pointerdown',dismiss);return()=>document.removeEventListener('pointerdown',dismiss);
-  },[open]);
-  return <div ref={container} className="mobile-sync-control" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();setOpen(false);}}}>
-    <button type="button" className={`mobile-sync-status ${state}`} aria-label="Show sync status" aria-expanded={open} aria-controls={id} title={status} onClick={()=>setOpen(value=>!value)}><span className="status-dot" aria-hidden="true"/></button>
-    {open&&<div id={id} className="mobile-sync-popover" role="status">{status}</div>}
-  </div>;
+    if(!pinned)return;
+    const dismiss=(event:PointerEvent)=>{if(!container.current?.contains(event.target as Node))setPinned(false);};
+    document.addEventListener('pointerdown',dismiss);
+    return()=>document.removeEventListener('pointerdown',dismiss);
+  },[pinned]);
+  return <>
+    <button ref={container} type="button" className={`floating-sync-status ${state}${expanded?' is-expanded':''}`}
+      aria-label={`Sync status: ${status}`} aria-expanded={expanded} aria-controls={id}
+      onPointerEnter={event=>{if(event.pointerType==='mouse')setHovered(true);}}
+      onPointerLeave={()=>setHovered(false)}
+      onFocus={event=>{if(event.currentTarget.matches(':focus-visible'))setFocused(true);}}
+      onBlur={()=>{setFocused(false);setPinned(false);}}
+      onClick={()=>setPinned(value=>!value)}
+      onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();setPinned(false);setHovered(false);setFocused(false);}}}>
+      <span className="status-dot" aria-hidden="true"/>
+      <span id={id} className="sync-status-description" aria-hidden={!expanded}>{status}</span>
+    </button>
+    <span className="screen-reader-only" role="status">{status}</span>
+  </>;
 }

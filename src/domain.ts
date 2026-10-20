@@ -29,6 +29,7 @@ export type Entry = {
   endsOn: string;
   endsAt: string;
   repeat: Interval | "";
+  repeatUntil: string;
   budgetType: "" | "income" | "expense";
   transactionType: "" | "income" | "expense";
   amount: number;
@@ -66,6 +67,7 @@ export function blankEntry(): Entry {
     endsOn: "",
     endsAt: "",
     repeat: "",
+    repeatUntil: "",
     budgetType: "",
     transactionType: "",
     amount: 0,
@@ -137,7 +139,7 @@ function nextScheduled(e: Entry, today: string): Occurrence | undefined {
     e.beginsOn && e.endsOn ? daysBetween(e.beginsOn, e.endsOn) : 0;
   for (let i = 0; i < 120000; i++) {
     const date = e.repeat ? repeatDate(anchor, e.repeat, i) : anchor;
-    if (date > "2200-12-31") return;
+    if (date > "2200-12-31" || e.repeatUntil && date > e.repeatUntil) return;
     const end = addDays(date, duration);
     if (end >= today)
       return { entry: e, date, start: date, end, key: `${e.id}:${date}` };
@@ -153,21 +155,21 @@ export function todoOccurrences(
   const range = period === "All" ? null : periodRange(period, today);
   const candidates = entries
     .flatMap((e) => {
-      if(e.task&&!e.beginsOn&&!e.endsOn)return [nextTask(e,today)];
+      if(e.task&&!e.beginsOn&&!e.endsOn)return [nextTask(e,today)!];
       if (range) return occurrences(e, range.from, range.to);
       if (e.task) {
         const next = nextTask(e, today);
-        if (!showDone || !e.repeat) return [next];
+        if (!showDone || !e.repeat) return next ? [next] : [];
         const duration =
           e.beginsOn && e.endsOn ? daysBetween(e.beginsOn, e.endsOn) : 0;
-        const completed = [...new Set(e.completedDates)].map((date) => ({
+        const completed = [...new Set(e.completedDates)].filter(date=>!e.repeatUntil||date<=e.repeatUntil).map((date) => ({
           entry: e,
           date,
           start: date,
           end: addDays(date, duration),
           key: `${e.id}:${date}`,
         }));
-        return [...completed, next];
+        return next ? [...completed, next] : completed;
       }
       const next = nextScheduled(e, today);
       return next ? [next] : [];
@@ -262,7 +264,7 @@ export function occurrences(
   const out: Occurrence[] = [];
   for (let i = 0; i < 120000; i++) {
     const start = entry.repeat ? repeatDate(anchor, entry.repeat, i) : anchor;
-    if (start > to) break;
+    if (start > to || entry.repeatUntil && start > entry.repeatUntil) break;
     const end = addDays(start, duration);
     if (end >= from)
       out.push({ entry, date: start, start, end, key: `${entry.id}:${start}` });
@@ -280,11 +282,12 @@ export function requirementDone(e: Entry, date: string): boolean {
   const relevant = occurrences(e, anchor, date).at(-1);
   return !!relevant && isDone(e, relevant.date);
 }
-export function nextTask(e: Entry, today: string): Occurrence {
+export function nextTask(e: Entry, today: string): Occurrence | undefined {
   const anchor = e.beginsOn || e.endsOn;
   if (e.repeat && anchor) {
     for (let i = 0; i < 120000; i++) {
       const date = repeatDate(anchor, e.repeat, i);
+      if(date>"2200-12-31"||e.repeatUntil&&date>e.repeatUntil)return;
       if (!e.completedDates.includes(date))
         return {
           entry: e,
@@ -312,8 +315,8 @@ export function sortTasks(entries: Entry[], today: string): Entry[] {
     .sort((a, b) => {
       const x = nextTask(a, today),
         y = nextTask(b, today);
-      return (x.end || x.start || "9999").localeCompare(
-        y.end || y.start || "9999",
+      return (x?.end || x?.start || "9999").localeCompare(
+        y?.end || y?.start || "9999",
       );
     });
   const result: Entry[] = [],
@@ -334,18 +337,18 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
   if(!Array.isArray(e.list)||e.list.length>200||JSON.stringify(e.list).length>40000)return 'Keep lists under 200 lines and 40,000 characters.';
   const listIds=new Set<string>();
   for(const line of e.list){
-    if(!line||typeof line.id!=='string'||!line.id||line.id.length>100||listIds.has(line.id)||typeof line.text!=='string'||!line.text.trim()||line.text.length>1000||typeof line.completed!=='boolean'||!Array.isArray(line.completedDates)||line.completedDates.some(d=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||d<'1900-01-01'||d>'2200-12-31'||dateKey(parseDate(d))!==d))return 'Invalid list item.';
+    if(!line||typeof line.id!=='string'||!line.id||line.id.length>100||listIds.has(line.id)||typeof line.text!=='string'||!line.text.trim()||line.text.length>1000||typeof line.completed!=='boolean'||!Array.isArray(line.completedDates)||line.completedDates.some(d=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||d<'1900-01-01'||d>'2200-12-31'||dateKey(parseDate(d))!==d))return 'Invalid list line.';
     listIds.add(line.id);
   }
   const boardError = validateBoardFields(e.boardItems || [], e.attachments || []);
   if (boardError) return boardError;
-  if (!e.name.trim()) return "Give this item a name.";
+  if (!e.name.trim()) return "Give this thought a name.";
   if (e.name.length > 10000) return "Keep names under 10,000 characters.";
   if(typeof e.where!=='string'||e.where.length>10000||typeof e.group!=='string'||e.group.length>10000||typeof e.color!=='string'||e.color!==''&&!boardColors.includes(e.color as typeof boardColors[number])||!Array.isArray(e.tags)||e.tags.length>200||e.tags.some(tag=>typeof tag!=='string'||tag.length>500))return 'Invalid location, color, tags, or group.';
   if (e.note.length > 10000) return "Keep notes under 10,000 characters.";
   if ((e.beginsAt && !e.beginsOn) || (e.endsAt && !e.endsOn))
     return "Add a date before adding a time.";
-  for (const d of [e.beginsOn, e.endsOn].filter(Boolean)) {
+  for (const d of [e.beginsOn, e.endsOn, e.repeatUntil].filter(Boolean)) {
     if (
       !/^\d{4}-\d{2}-\d{2}$/.test(d) ||
       d < "1900-01-01" ||
@@ -365,13 +368,14 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
   )
     return "The end must come after the beginning.";
   if (e.repeat && !e.beginsOn && !e.endsOn)
-    return "Repeating items need a beginning or ending date.";
+    return "Repeating thoughts need a beginning or ending date.";
+  if(e.repeatUntil&&(!e.repeat||e.repeatUntil<(e.beginsOn||e.endsOn)))return "Until must be on or after the first occurrence of a repeating thought.";
   if (e.repeat && !intervals.includes(e.repeat))
     return "Choose a valid repeat interval.";
   if (!Number.isFinite(e.amount) || e.amount < 0)
     return "Enter a positive amount or zero.";
   if (e.budgetType && e.transactionType)
-    return "Use separate items for a budget plan and an actual transaction.";
+    return "Use separate thoughts for a budget plan and an actual transaction.";
   if (
     e.budgetId &&
     !entries.some(
@@ -381,7 +385,7 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
         x.id !== e.id,
     )
   )
-    return "Link the transaction to a matching budget item.";
+    return "Link the transaction to a matching budget thought.";
   const visited = new Set<string>();
   function cycle(id: string): boolean {
     if (id === e.id) return true;
@@ -390,19 +394,20 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
     return !!entries.find((x) => x.id === id)?.requires.some(cycle);
   }
   if (e.requires.some((id) => !entries.some((x) => x.id === id)))
-    return "An item you are waiting on no longer exists.";
+    return "A thought you are waiting on no longer exists.";
   if (e.requires.some(cycle))
     return "Waiting on links cannot create a dependency cycle.";
   return "";
 }
 export function decodeEntries(value: unknown): Entry[] {
   if (!Array.isArray(value) || value.length > 10000)
-    throw new Error("Expected an array of up to 10,000 items.");
+    throw new Error("Expected an array of up to 10,000 thoughts.");
   const normalized = value.map(raw => {
     if(!raw || typeof raw!=='object')return raw;
     const legacy=raw.name===undefined && typeof raw.note==='string';
     const lines=legacy?raw.note.trim().split(/\r?\n/):[];
-    return {...raw,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),list:raw.list??[],where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
+    const dates=raw.beginsOn&&!raw.endsOn?{endsOn:raw.beginsOn,endsAt:raw.beginsAt}:raw.endsOn&&!raw.beginsOn?{beginsOn:raw.endsOn,beginsAt:raw.endsAt}:{};
+    return {...raw,repeatUntil:raw.repeatUntil??'',...dates,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),list:raw.list??[],where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
   });
   const strings = [
     "name",
@@ -413,6 +418,7 @@ export function decodeEntries(value: unknown): Entry[] {
     "endsOn",
     "endsAt",
     "repeat",
+    "repeatUntil",
     "budgetType",
     "transactionType",
     "budgetId",
@@ -436,7 +442,7 @@ export function decodeEntries(value: unknown): Entry[] {
       !raw.id ||
       ids.has(raw.id)
     )
-      throw new Error("This file contains invalid or duplicate items.");
+      throw new Error("This file contains invalid or duplicate thoughts.");
     if (
       !["", "income", "expense"].includes(raw.budgetType) ||
       !["", "income", "expense"].includes(raw.transactionType)

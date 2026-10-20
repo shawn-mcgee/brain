@@ -32,6 +32,7 @@ import {
 import type { Store } from "./storage";
 import type { Connection } from './storage';
 import Attachments from './Attachments';
+import {signedAmount,moneyAmountFields,trackingDraft} from './money-model';
 import Checklist from './Checklist';
 import {setTaskDone} from './checklist-model';
 import {actualEntryChanges,sameValue} from './entry-changes';
@@ -42,7 +43,7 @@ import { uploadPendingFiles } from './files';
 import { login, logout } from "./auth";
 import type { Session } from "./auth";
 import { mergeEntries, synchronize } from "./sync";
-import { taskParticles } from "./personality";
+import { taskParticles, taskTheme } from "./personality";
 import TaskCelebration from "./TaskCelebration";
 import type { Celebration } from "./TaskCelebration";
 import SignInCharacter from "./SignInCharacter";
@@ -52,8 +53,10 @@ import Toast from './Toast';
 import PersonalitySurface from './PersonalitySurface';
 import ResponsiveSidebar from './ResponsiveSidebar';
 import SyncStatusButton from './SyncStatusButton';
+import ThemeToggle from './ThemeToggle';
 import {boardColors} from './board-model';
-import {entrySearchText,copyEntry,defaultSections,fancyName} from './entry-attributes';
+import {entrySearchText,defaultSections,fancyName} from './entry-attributes';
+import {freshCopy,futureCopy,replaceFuture} from './repeating-copy';
 import { toggleDisclosure } from "./disclosure";
 import {
   sectionNames,
@@ -67,9 +70,9 @@ import {
 import type { EntrySection as Section } from "./entry-sections";
 import "./App.css";
 
-type View = "Inbox" | "Todo" | "Calendar" | "Budget" | "Board" | "Inventory";
+type View = "Inbox" | "Todo" | "Calendar" | "Budget" | "Board" | "Thoughts";
 const icons: Record<string, string> = {
-  Inventory: "\u{1F5C3}\uFE0F",
+  Thoughts: "\u{1F4AD}",
   Board: "📌",
   Inbox: "📥",
   Todo: "✅",
@@ -98,12 +101,14 @@ function Modal({
   close,
   actions,
   entryModal=false,
+  className,
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
   actions?: ReactNode;
   entryModal?:boolean;
+  className?:string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -114,7 +119,7 @@ function Modal({
   return (
     <dialog
       ref={ref}
-      className={entryModal?"entry-modal":undefined}
+      className={[entryModal?"entry-modal":"",className].filter(Boolean).join(" ")||undefined}
       onCancel={close}
       onClick={(e) => {
         if (e.target === ref.current) close();
@@ -139,6 +144,42 @@ function Modal({
   );
 }
 
+function RepeatingCopyDialog({draft,source,today,close,openDraft}:{draft:Entry;source:Entry;today:string;close:()=>void;openDraft:(entry:Entry,replace:boolean)=>void}) {
+  const anchor=source.beginsOn||source.endsOn;
+  const minimum=anchor?addDays(anchor,1):today;
+  const maximum=source.repeatUntil||'2200-12-31';
+  const canReplace=!!source.repeat&&!!anchor&&minimum<=maximum;
+  const [mode,setMode]=useState<'separate'|'future'>('separate');
+  const [from,setFrom]=useState(()=>{const preferred=minimum>today?minimum:today;return preferred>maximum?maximum:preferred;});
+  const [error,setError]=useState('');
+  return <Modal title="Copy repeating thought" className="completion-dialog copy-dialog" close={close}>
+    <form onSubmit={event=>{
+      event.preventDefault();
+      try {openDraft(mode==='future'?futureCopy(draft,source,from):freshCopy(draft),mode==='future');}
+      catch(cause){setError(message(cause));}
+    }}>
+      <div className="completion-body">
+        <strong className="copy-item-name">{draft.name}</strong>
+        <label className={`copy-choice${mode==='separate'?' is-selected':''}`}>
+          <input type="radio" name="copy-mode" value="separate" checked={mode==='separate'} onChange={()=>{setMode('separate');setError('');}}/>
+          <span><strong>Make a separate copy</strong><small>Keep the original schedule and start a new, unchecked copy.</small></span>
+        </label>
+        <label className={`copy-choice${mode==='future'?' is-selected':''}`}>
+          <input type="radio" name="copy-mode" value="future" disabled={!canReplace} checked={mode==='future'} onChange={()=>{setMode('future');setError('');}}/>
+          <span><strong>Change future occurrences</strong><small>{canReplace?'Keep the earlier occurrences and edit a replacement from a date.':'This series has no later dates to replace.'}</small></span>
+        </label>
+        {mode==='future'&&<div className="copy-date">
+          <label>Replacement starts<input type="date" required min={minimum} max={maximum} value={from} onChange={event=>{setFrom(event.target.value);setError('');}}/></label>
+          {from&&<p>The original will repeat through {formatDate(addDays(from,-1))}. Its earlier history stays with it.</p>}
+        </div>}
+        <p className="completion-description">Nothing changes until you save the new draft.</p>
+        {error&&<p className="error" role="alert">{error}</p>}
+      </div>
+      <div className="completion-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button type="submit" className="primary">Open draft</button></div>
+    </form>
+  </Modal>;
+}
+
 function Editor({
   entry,
   entries,
@@ -149,25 +190,31 @@ function Editor({
   token,
   presetSections=[],
   onCopy,
+  initialAmount,
+  replacingFuture=false,
 }: {
   entry: Entry;
   entries: Entry[];
-  save: (e: Entry) => void;
+  save: (e: Entry) => string | void;
   close: () => void;
   embedded?: boolean;
   connection: Connection;
   token?: string;
   presetSections?:Section[];
   onCopy?:(entry:Entry)=>void;
+  initialAmount?:string;
+  replacingFuture?:boolean;
 }) {
   const formId=useId();
   const [namePlaceholder]=useState(fancyName);
-  const [draft, setDraft] = useState(()=>({...entry,...(presetSections.includes('task')?{task:true}:{})})),
+  const [draft, setDraft] = useState(()=>presetSections.reduce((draft,section)=>initializeEntrySection(draft,section),entry)),
     [error, setError] = useState("");
   const [filesBusy,setFilesBusy]=useState(false);
   const [sections, setSections] = useState<Section[]>(() =>
     [...new Set([...initialEntrySections(entry),...presetSections])],
   );
+  const [isRange,setIsRange]=useState(!!entry.beginsOn&&!!entry.endsOn&&(entry.beginsOn!==entry.endsOn||entry.beginsAt!==entry.endsAt));
+  const [amountText,setAmountText]=useState(()=>initialAmount??(entry.amount||entries.some(saved=>saved.id===entry.id)?String(signedAmount(entry)):''));
   const availableSections = availableEntrySections(sections);
   const sectionRefs = useRef<
     Partial<Record<Section, HTMLDetailsElement | null>>
@@ -179,6 +226,8 @@ function Editor({
   function removeSection(section: Section) {
     if (section === "attachments" && filesBusy) return;
     const removed = removeEntrySection(draft, sections, section);
+    if(section==='when')setIsRange(false);
+    if(section==='money')setAmountText('');
     const removedRepeat =
       sections.includes("repeat") &&
       !removed.sections.includes("repeat") &&
@@ -207,6 +256,7 @@ function Editor({
   }
   const update = (values: Partial<Entry>) =>
     setDraft((d) => ({ ...d, ...values }));
+  const editorTheme = draft.color ? `thought-editor-colored board-${draft.color}` : '';
   function submit(e: FormEvent) {
     e.preventDefault();
     if(filesBusy){setError('Wait for the files to finish saving.');return;}
@@ -222,18 +272,18 @@ function Editor({
       sections.includes("money") &&
       !cleaned.budgetType &&
       !cleaned.transactionType
-        ? "Choose an item type for Money, or remove the Money section."
+        ? "Choose a thought type for Money, or remove the Money section."
         : validateEntry(cleaned, entries);
     if (issue) {
       setError(issue);
       Object.values(sectionRefs.current).forEach((section) => {
         if (section) section.open = true;
       });
-    } else save(cleaned);
+    } else {const issue=save(cleaned);if(issue)setError(issue);}
   }
   const fields = {
     list: <Checklist entry={draft} entries={entries} editable onChange={setDraft}/>,
-    attachments: <Attachments value={draft.attachments} entryId={draft.id} connection={connection} token={token} onChange={attachments=>update({attachments})} onBusyChange={setFilesBusy}/>,
+    attachments: <Attachments itemName={draft.name} note={draft.note} value={draft.attachments} entryId={draft.id} connection={connection} token={token} onChange={attachments=>update({attachments})} onBusyChange={setFilesBusy}/>,
     note: (
       <>
         <label>
@@ -251,67 +301,54 @@ function Editor({
     where: <AttributeInput label="Where" value={draft.where} options={[...new Set(entries.map(e=>e.where).filter(Boolean))].sort()} onChange={where=>update({where})}/>,
     group: <AttributeInput label="Group" value={draft.group} options={[...new Set(entries.map(e=>e.group).filter(Boolean))].sort()} onChange={group=>update({group})}/>,
     tags: <AttributeInput label="Tags" multiple value={draft.tags} options={[...new Set(entries.flatMap(e=>e.tags))].sort()} onChange={value=>update({tags:[...new Set(value.split(',').map(v=>v.trim()).filter(Boolean))]})}/>,
-    color: <div className="item-color-options" role="group" aria-label="Item color"><button type="button" className="item-color-automatic" aria-pressed={!draft.color} onClick={()=>update({color:''})}>Automatic</button>{boardColors.map(color=><button key={color} type="button" className={`item-color-swatch board-${color}`} aria-label={color} title={color} aria-pressed={draft.color===color} onClick={()=>update({color})}>{draft.color===color&&<span aria-hidden="true">✓</span>}</button>)}</div>,
+    color: <div className="item-color-options" role="group" aria-label="Thought color"><button type="button" className="item-color-automatic" aria-pressed={!draft.color} onClick={()=>update({color:''})}>Automatic</button>{boardColors.map(color=><button key={color} type="button" className={`item-color-swatch board-${color}`} aria-label={color} title={color} aria-pressed={draft.color===color} onClick={()=>update({color})}>{draft.color===color&&<span aria-hidden="true">✓</span>}</button>)}</div>,
     task: null,
-    begins: (
-      <>
-        <div className="form-grid">
-          <label>
-            Date
-            <input
-              type="date"
-              min="1900-01-01"
-              max="2200-12-31"
-              value={draft.beginsOn}
-              onChange={(e) =>
-                update({
-                  beginsOn: e.target.value,
-                  beginsAt: e.target.value ? draft.beginsAt : "",
-                })
-              }
-            />
-          </label>
-          <label>
-            Time
-            <input
-              type="time"
-              disabled={!draft.beginsOn}
-              value={draft.beginsAt}
-              onChange={(e) => update({ beginsAt: e.target.value })}
-            />
-          </label>
+    when: (
+      <div className="when-control">
+        <label className="range-switch">
+          <span className="range-switch-copy">
+            <span>Date range</span>
+            <small>{isRange ? 'Choose when it starts and ends.' : 'One date, with an optional time.'}</small>
+          </span>
+          <input
+            className="screen-reader-only"
+            type="checkbox"
+            role="switch"
+            aria-label="Date range"
+            checked={isRange}
+            onChange={event => {
+              setIsRange(event.target.checked);
+              update({endsOn: draft.beginsOn, endsAt: draft.beginsAt});
+            }}
+          />
+          <span className="range-switch-track" aria-hidden="true" />
+        </label>
+        <div className="when-dates">
+          <div className="when-endpoint">
+            <label>
+              {isRange ? 'Start date' : 'Date'}
+              <input type="date" required min="1900-01-01" max="2200-12-31" value={draft.beginsOn}
+                onChange={event => update({beginsOn: event.target.value, ...(!isRange ? {endsOn: event.target.value} : {})})} />
+            </label>
+            <label>
+              <span className="field-label">{isRange ? 'Start time' : 'Time'} <span className="field-optional">Optional</span></span>
+              <input type="time" value={draft.beginsAt}
+                onChange={event => update({beginsAt: event.target.value, ...(!isRange ? {endsAt: event.target.value} : {})})} />
+            </label>
+          </div>
+          {isRange && <div className="when-endpoint when-endpoint-end">
+            <label>
+              {draft.task ? 'Due date' : 'End date'}
+              <input type="date" required min={draft.beginsOn || '1900-01-01'} max="2200-12-31" value={draft.endsOn}
+                onChange={event => update({endsOn: event.target.value})} />
+            </label>
+            <label>
+              <span className="field-label">{draft.task ? 'Due time' : 'End time'} <span className="field-optional">Optional</span></span>
+              <input type="time" value={draft.endsAt} onChange={event => update({endsAt: event.target.value})} />
+            </label>
+          </div>}
         </div>
-      </>
-    ),
-    ends: (
-      <>
-        <div className="form-grid">
-          <label>
-            Date
-            <input
-              type="date"
-              min="1900-01-01"
-              max="2200-12-31"
-              value={draft.endsOn}
-              onChange={(e) =>
-                update({
-                  endsOn: e.target.value,
-                  endsAt: e.target.value ? draft.endsAt : "",
-                })
-              }
-            />
-          </label>
-          <label>
-            Time
-            <input
-              type="time"
-              disabled={!draft.endsOn}
-              value={draft.endsAt}
-              onChange={(e) => update({ endsAt: e.target.value })}
-            />
-          </label>
-        </div>
-      </>
+      </div>
     ),
     repeat: (
       <>
@@ -320,7 +357,7 @@ function Editor({
           <select
             value={draft.repeat}
             onChange={(e) =>
-              update({ repeat: e.target.value as Entry["repeat"] })
+              update({ repeat: e.target.value as Entry["repeat"],...(!e.target.value?{repeatUntil:""}:{}) })
             }
           >
             <option value="">Does not repeat</option>
@@ -329,12 +366,14 @@ function Editor({
             ))}
           </select>
         </label>
+        <label>Until<select disabled={!draft.repeat} value={draft.repeatUntil?'date':'forever'} onChange={event=>update({repeatUntil:event.target.value==='date'?draft.beginsOn||dateKey(new Date()):''})}><option value="forever">Forever</option><option value="date">Specific date</option></select></label>
+        {draft.repeatUntil&&<label>Last repeat date<input required type="date" min={draft.beginsOn||'1900-01-01'} max="2200-12-31" value={draft.repeatUntil} onChange={event=>update({repeatUntil:event.target.value})}/></label>}
       </>
     ),
     requires: (
       <>
         <p className="hint">
-          Select any items this item is waiting on. Tasks must be done first; other items act as reference
+          Select any thoughts this thought is waiting on. Tasks must be done first; other thoughts act as reference
           information.
         </p>
         {entries.filter((e) => e.id !== draft.id).length ? (
@@ -359,71 +398,71 @@ function Editor({
               ))}
           </div>
         ) : (
-          <p className="muted">Add another item to wait on.</p>
+          <p className="muted">Add another thought to wait on.</p>
         )}
       </>
     ),
     money: (
       <>
-        <div className="form-grid">
-          <label>
-            Type (required)
-            <select
-              required
-              value={
-                draft.budgetType
-                  ? `budget-${draft.budgetType}`
-                  : draft.transactionType
-              }
-              onChange={(e) => {
-                const v = e.target.value;
-                update({
-                  budgetType: v.startsWith("budget-")
-                    ? (v.slice(7) as Entry["budgetType"])
-                    : "",
-                  transactionType:
-                    v && !v.startsWith("budget-")
-                      ? (v as Entry["transactionType"])
-                      : "",
-                  budgetId: "",
-                });
-              }}
-            >
-              <option value="" disabled hidden />
-              <option value="budget-income">Planned income</option>
-              <option value="budget-expense">Planned expense</option>
-              <option value="income">Actual income</option>
-              <option value="expense">Actual expense</option>
-            </select>
-          </label>
-          <label>
-            Amount (USD)
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              disabled={!draft.budgetType && !draft.transactionType}
-              value={draft.amount}
-              onChange={(e) => update({ amount: Number(e.target.value) })}
-            />
-          </label>
+        <div className="money-control">
+          <div className="money-mode" role="group" aria-label="Money mode">
+            {(['Planned', 'Tracked'] as const).map(mode => {
+              const selected = mode === 'Planned' ? !!draft.budgetType : !!draft.transactionType;
+              return <button key={mode} type="button" aria-pressed={selected} onClick={() => {
+                if (selected) return;
+                const type = draft.budgetType || draft.transactionType || 'income';
+                update({budgetType: mode === 'Planned' ? type : '', transactionType: mode === 'Tracked' ? type : '', budgetId: ''});
+              }}>
+                <span aria-hidden="true">{mode === 'Planned' ? '◷' : '✓'}</span> {mode}
+              </button>;
+            })}
+          </div>
+          <p className="money-mode-description">{draft.budgetType ? 'An amount you expect to earn or spend.' : 'Money you have received or spent.'}</p>
+          <div className="money-amount-card">
+            <div className="money-amount-heading">
+              <label htmlFor={`${formId}-amount`}>Amount</label>
+              <span className={`money-direction ${(draft.budgetType || draft.transactionType) === 'expense' ? 'is-expense' : 'is-income'}`} role="status">
+                <span aria-hidden="true">{(draft.budgetType || draft.transactionType) === 'expense' ? '↗' : '↙'}</span>
+                {(draft.budgetType || draft.transactionType) === 'expense' ? 'Expense' : 'Income'}
+              </span>
+            </div>
+            <div className="money-amount-input">
+              <span aria-hidden="true">$</span>
+              <input id={`${formId}-amount`} aria-label="Amount in US dollars" aria-describedby={`${formId}-amount-hint`} type="number" required step="0.01"
+                placeholder={(draft.budgetType || draft.transactionType) === 'expense' ? '-0.00' : '0.00'} value={amountText}
+                onChange={event => {
+                  const value = event.target.value;
+                  setAmountText(value);
+                  update(value === '' ? {amount: 0} : moneyAmountFields(draft, Number(value)));
+                }} />
+              <span className="money-currency">USD</span>
+            </div>
+            <p id={`${formId}-amount-hint`} className="money-amount-hint"><span>+ income</span><span>− expense</span></p>
+          </div>
         </div>
         {draft.transactionType && (
           <label>
-            Budget item
+            Link to a budget thought
             <select
               value={draft.budgetId}
-              onChange={(e) => update({ budgetId: e.target.value })}
+              onChange={event => {
+                const budgetId = event.target.value;
+                const plan = entries.find(item => item.id === budgetId && item.budgetType);
+                update({budgetId, ...(plan ? {transactionType: plan.budgetType} : {})});
+                if (plan && amountText !== '') {
+                  setAmountText(String(draft.amount * (plan.budgetType === 'expense' ? -1 : 1)));
+                }
+              }}
             >
               <option value="">One-off transaction</option>
               {entries
                 .filter(
                   (e) =>
-                    e.id !== draft.id && e.budgetType === draft.transactionType,
+                    e.id !== draft.id && !!e.budgetType,
                 )
                 .map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.name}
+                    {e.name} · {e.budgetType === 'income' ? 'Income' : 'Expense'}
                   </option>
                 ))}
             </select>
@@ -435,7 +474,8 @@ function Editor({
   const form = (
     <form id={formId} onSubmit={submit} onInvalidCapture={event=>{const details=(event.target as HTMLElement).closest('details');if(details)details.open=true;}} className="editor">
       <div className="editor-fields">
-      <label className="entry-name">Name<small className="attribute-description">A name for this item. Names can be shared by different items.</small><input autoFocus required maxLength={10000} value={draft.name} placeholder={namePlaceholder} onChange={event=>update({name:event.target.value})}/></label>
+      {replacingFuture&&<p className="replacement-notice">{draft.beginsOn?`Saving starts this replacement on ${formatDate(draft.beginsOn)} and ends the original on ${formatDate(addDays(draft.beginsOn,-1))}.`:'Choose a When date for the replacement.'} Cancel leaves the original unchanged.</p>}
+      <label className="entry-name">Name<small className="attribute-description">A name for this thought. Names can be shared by different thoughts.</small><input autoFocus required maxLength={10000} value={draft.name} placeholder={namePlaceholder} onChange={event=>update({name:event.target.value})}/></label>
       {sections.map((section) => (
         <div className="entry-section" key={section}>
           <details
@@ -516,16 +556,17 @@ function Editor({
     </form>
   );
   return embedded ? (
-    <section className="inbox-form" aria-label="New item">
+    <section className={`inbox-form ${editorTheme}`} aria-label="New thought">
       {form}
     </section>
   ) : (
     <Modal
       title={
-        entries.some((e) => e.id === entry.id) ? "Edit item" : "New item"
+        entries.some((e) => e.id === entry.id) ? "Edit thought" : "New thought"
       }
       close={close}
       entryModal
+      className={editorTheme}
     >
       {form}
     </Modal>
@@ -533,6 +574,10 @@ function Editor({
 }
 
 function App() {
+  const [trackingAmount,setTrackingAmount]=useState<{id:string;value:string}|null>(null);
+  const [deleteTarget,setDeleteTarget]=useState<Entry|null>(null);
+  const [completedTarget,setCompletedTarget]=useState<Entry|null>(null);
+
   const [initial] = useState(() => {
     try {
       return { store: loadStore(), error: "" };
@@ -552,6 +597,8 @@ function App() {
     [editor, setEditor] = useState<Entry | null>(null),
     [settings, setSettings] = useState(false);
   const [copyDraftId,setCopyDraftId]=useState('');
+  const [copyChoice,setCopyChoice]=useState<{draft:Entry;source:Entry}|null>(null);
+  const [futureReplacement,setFutureReplacement]=useState<{draftId:string;source:Entry}|null>(null);
   const [inboxEntry, setInboxEntry] = useState(blankEntry);
   const [search, setSearch] = useState(""),
     [person, setPerson] = useState(""),
@@ -658,7 +705,12 @@ function App() {
     const current=stateRef.current;
     entries=actualEntryChanges(current.entries,entries);
     if(entries===current.entries)return true;
-    return commit({ ...current, entries, dirty: true });
+    const saved=commit({ ...current, entries, dirty: true });
+    if(saved){
+      const completed=entries.find(entry=>{const before=current.entries.find(old=>old.id===entry.id);return entry.task&&before&&(!entry.repeat?!before.completed&&entry.completed:!!entry.budgetType&&entry.completedDates.some(date=>!before.completedDates.includes(date)));});
+      if(completed&&(!completed.repeat||completed.budgetType))setCompletedTarget(completed);
+    }
+    return saved;
   }
   function updateBoard(entryId: string, update: (items: BoardItem[]) => BoardItem[]) {
     change(stateRef.current.entries.map(entry => entry.id === entryId ? {...entry, boardItems: update(entry.boardItems), updatedAt: new Date().toISOString()} : entry));
@@ -717,7 +769,7 @@ function App() {
       setSyncFailures(0);
       if (merged.conflicts)
         setNotice(
-          "Concurrent versions were preserved as separate items during automatic merge.",
+          "Concurrent versions were preserved as separate thoughts during automatic merge.",
         );
     } catch (e) {
       setError(
@@ -784,7 +836,7 @@ function App() {
         setError("");
         if (data.conflicts + rebased.conflicts)
           setNotice(
-            "Changes merged automatically. Concurrent versions were preserved as separate items; dependency cycles were removed if needed.",
+            "Changes merged automatically. Concurrent versions were preserved as separate thoughts; dependency cycles were removed if needed.",
           );
         else if (!automatic) setNotice("Everything is up to date.");
         else if (current.dirty)
@@ -802,11 +854,26 @@ function App() {
       setSyncing(false);
     }
   }
+  function beginCopy(draft:Entry) {
+    const source=stateRef.current.entries.find(entry=>entry.id===draft.id);
+    if(draft.repeat&&source){setCopyChoice({draft,source});return;}
+    const copy=freshCopy(draft);
+    setFutureReplacement(null);setCopyDraftId(copy.id);setEditor(copy);
+  }
   function saveEntry(entry: Entry, source: "popup" | "inbox" = "popup") {
     const current = stateRef.current.entries;
+    if(source==='popup'&&futureReplacement?.draftId===entry.id){
+      try {
+        const next=replaceFuture(current,futureReplacement.source,entry);
+        if(!change(next))return 'The replacement could not be saved. Your original schedule has been kept.';
+        setEditor(null);setFutureReplacement(null);setError('');
+        setNotice('Future occurrences updated. Earlier history was kept with the original.');
+      } catch(cause){return message(cause);}
+      return;
+    }
     // Preserve remote changes received while this editor was open.
     const base =
-      source === "popup" && editor?.name.trim()
+      source === "popup" && editor?.name.trim() && current.some(saved=>saved.id===entry.id)
         ? [...current.filter((e) => e.id !== entry.id), editor]
         : current;
     const merged = mergeEntries(
@@ -821,23 +888,24 @@ function App() {
       else setEditor(null);
       setNotice(
         merged.conflicts
-          ? "Concurrent versions were preserved as separate items."
+          ? "Concurrent versions were preserved as separate thoughts."
           : session
-            ? "Item saved. Syncing automatically…"
-            : "Item saved on this device.",
+            ? "Thought saved. Syncing automatically…"
+            : "Thought saved on this device.",
       );
       setError("");
     }
   }
-  function remove(entry: Entry) {
-    if (
-      !confirm(
-        `Delete “${entry.name.slice(0, 80)}”? Links to this item will also be removed.`,
-      )
-    )
-      return;
+  function trackBudget(entry:Entry,includeAmount=false) {
+    const draft=trackingDraft(entry,includeAmount);
+    setCopyDraftId(draft.id);
+    setTrackingAmount({id:draft.id,value:includeAmount?String(signedAmount(draft)):''});
+    setEditor(draft);
+  }
+  function remove(entry:Entry){setDeleteTarget(entry);}
+  function removeConfirmed(entry:Entry) {
     change(
-      store.entries
+      stateRef.current.entries
         .filter((e) => e.id !== entry.id)
         .map((e) => ({
           ...e,
@@ -870,6 +938,7 @@ function App() {
         const celebration: Celebration = {
           id: crypto.randomUUID(),
           entryId: entry.id,
+          money: taskTheme(entry) === "money",
           date,
           x: box.left + box.width / 2,
           y: box.top + box.height / 2,
@@ -898,7 +967,7 @@ function App() {
         incoming = decodeEntries(Array.isArray(data) ? data : data.entries);
       if (
         !confirm(
-          `Merge ${incoming.length} items into this device? Imported items replace existing items with the same ID. Sync will upload the result.`,
+          `Merge ${incoming.length} thoughts into this device? Imported thoughts replace existing thoughts with the same ID. Sync will upload the result.`,
         )
       )
         return;
@@ -1002,7 +1071,7 @@ function App() {
             disabled={busy}
             onClick={(event) => toggle(e, date, event.currentTarget)}
           >
-            {done ? "✅" : ""}
+            {done ? (e.budgetType || e.transactionType ? "💰" : "✅") : ""}
           </button>
         ) : (
           <span
@@ -1031,7 +1100,7 @@ function App() {
                 {p}
               </span>
             ))}
-            {e.repeat && <span>🔁 {e.repeat}</span>}
+            {e.repeat && <span>🔁 {e.repeat}{e.repeatUntil&&` until ${formatDate(e.repeatUntil)}`}</span>}
             {e.attachments.length>0&&<span>📎 {e.attachments.length} files</span>}
             {e.requires.length > 0 && (
               <span>🔗 Waiting on {e.requires.length}</span>
@@ -1074,6 +1143,7 @@ function App() {
             )}
           </span>
         )}
+        {e.budgetType&&<button type="button" className="secondary" disabled={busy} onClick={()=>trackBudget(e)}>Track {e.budgetType}</button>}
         {e.task&&<span className="task-anticipation" aria-hidden="true">{done?"\u{1F440} \u{2049}\uFE0F":"\u{1F440} \u{203C}\uFE0F"}</span>}
         <span className="entry-sweat" aria-hidden="true">
           <span>💧</span>
@@ -1101,16 +1171,19 @@ function App() {
 
   return (
     <div className={`app-shell${view === "Board" && unlocked ? " board-workspace" : ""}`}>
+      <div className="app-utilities" role="group" aria-label="App status and appearance">
+        <SyncStatusButton state={session?busy||syncing?'is-syncing':store.dirty?syncFailures>0?'is-error':'is-pending':'is-connected':'is-offline'} status={session?busy||syncing?'Syncing…':store.dirty?syncFailures>0?'Sync failed · retrying':'Waiting to sync':'Connected to Google':localMode?'Local workspace':'Not signed in'}/>
+        <ThemeToggle />
+      </div>
       <ResponsiveSidebar mobileHeader={<>
         <div className="mobile-header-context"><span className="mobile-current-tab">{view}</span><span aria-hidden="true">·</span><time className="mobile-today" dateTime={today} title={parseDate(today).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'})}>{parseDate(today).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</time></div>
-        <SyncStatusButton state={session?busy||syncing?'is-syncing':store.dirty?'is-pending':'is-connected':'is-offline'} status={session?busy||syncing?'Syncing…':store.dirty?syncFailures>0?'Sync failed. Retrying automatically.':'Waiting to sync':'Connected to Google':localMode?'Local workspace':'Not signed in'}/>
-        {session&&<button type="button" className={`mobile-sync-button${busy||syncing?' is-syncing':''}`} aria-label={busy||syncing?'Syncing':'Sync now'} title={busy||syncing?'Syncing':'Sync now'} disabled={busy||syncing} onClick={()=>sync()}><span aria-hidden="true">{'\u{1F504}'}</span></button>}
+
       </>}>
         <a className="brand" href="#" onClick={() => setView("Inbox")}>
-          Brain
+          brain
         </a>
         <nav aria-label="Main navigation">
-          {(["Inbox", "Todo", "Calendar", "Budget", "Board", "Inventory"] as const).map((v) => (
+          {(["Inbox", "Todo", "Calendar", "Budget", "Board", "Thoughts"] as const).map((v) => (
             <button
               key={v}
               className={view === v ? "active" : ""}
@@ -1172,25 +1245,7 @@ function App() {
               })}
             </time>
           </div>
-          <div className="topbar-actions">
-            <span className="status-dot" />
-            {session
-              ? store.dirty
-                ? "Waiting to sync"
-                : "Connected to Google"
-              : localMode
-                ? "Local workspace"
-                : "Not signed in"}
-            {session && (
-              <button
-                className="sync-button"
-                onClick={() => sync()}
-                disabled={busy || syncing}
-              >
-                {busy || syncing ? "Syncing…" : "🔄 Sync now"}
-              </button>
-            )}
-          </div>
+
         </header>
         <div className="main-content">
           {error && (
@@ -1206,7 +1261,7 @@ function App() {
             <section className="welcome">
               <SignInCharacter />
               <h1>Sign in</h1>
-              <p>Use your Google account to access shared items.</p>
+              <p>Use your Google account to access shared thoughts.</p>
               <button
                 className="google-button"
                 onClick={signIn}
@@ -1259,8 +1314,8 @@ function App() {
                     <button
                       className="floating-add-entry"
                       type="button"
-                      aria-label="Add item"
-                      title="Add item"
+                      aria-label="Add thought"
+                      title="Add thought"
                       disabled={busy}
                       onClick={() =>
                         setEditor({
@@ -1280,7 +1335,7 @@ function App() {
               {localMode && (
                 <div className="local-banner">
                   <span>
-                    ◉ Local workspace · Your items stay in this browser until
+                    ◉ Local workspace · Your thoughts stay in this browser until
                     you connect.
                   </span>
                   <button onClick={signIn} disabled={busy}>
@@ -1310,22 +1365,22 @@ function App() {
                           ? "Tasks & coming up"
                           : view === "Calendar"
                             ? calendarPeriod === "All"
-                              ? "All dated items"
+                              ? "All dated thoughts"
                               : parseDate(
                                   calendarRange.from,
                                 ).toLocaleDateString(undefined, {
                                   month: "long",
                                   year: "numeric",
                                 })
-                            : view === "Inventory" ? "All items" : "All-time overview"}
+                            : view === "Thoughts" ? "All thoughts" : "All-time overview"}
                       </h2>
                     </div>
                     <div className="filters">
                       <label className="search">
                         <span aria-hidden="true">🔎</span>
                         <input
-                          aria-label="Search items"
-                          placeholder="Find an item…"
+                          aria-label="Search thoughts"
+                          placeholder="Find a thought…"
                           value={search}
                           onChange={(e) => setSearch(e.target.value)}
                         />
@@ -1376,7 +1431,7 @@ function App() {
                           ),
                         )
                       : todoItems.length ? null : empty(
-                          "No matching items",
+                          "No matching thoughts",
                           "No tasks or upcoming dates match this view.",
                         )}
                   </section>
@@ -1389,7 +1444,7 @@ function App() {
                   {calendarPeriod === "All" ? (
                     <>
                       <p className="hint calendar-all-hint">
-                        All dated items. Repeating items are listed once
+                        All dated thoughts. Repeating thoughts are listed once
                         using their original dates.
                       </p>
                       <section className="entry-list">
@@ -1398,7 +1453,7 @@ function App() {
                             row(e, e.beginsOn || e.endsOn),
                           )
                         ) : (
-                          <div className="quiet-empty">No dated items.</div>
+                          <div className="quiet-empty">No dated thoughts.</div>
                         )}
                       </section>
                     </>
@@ -1432,7 +1487,7 @@ function App() {
                               return (
                                 <button
                                   key={day}
-                                  aria-label={`${day}, ${items.length} items`}
+                                  aria-label={`${day}, ${items.length} thoughts`}
                                   aria-pressed={day === selectedDay}
                                   className={`calendar-day ${day < calendarRange.from || day > calendarRange.to ? "outside" : ""} ${day === selectedDay ? "selected" : ""}`}
                                   onClick={() => setSelectedDay(day)}
@@ -1574,7 +1629,7 @@ function App() {
                                 )
                             ) : (
                               <div className="quiet-empty">
-                                No items for this date.
+                                No thoughts for this date.
                               </div>
                             )}
                           </section>
@@ -1585,7 +1640,7 @@ function App() {
                   {filtered.some(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn)&&<section aria-label="Tasks for any time"><h3>Any time</h3><div className="entry-list">{filtered.filter(entry=>entry.task&&!entry.beginsOn&&!entry.endsOn).map(entry=>row(entry))}</div></section>}
                 </>
               )}
-              {view === "Inventory"&&<section className="entry-list" aria-label="All items">{filtered.length?filtered.map(entry=>row(entry)):empty('No matching items','Search your items or add an item.')}</section>}
+              {view === "Thoughts"&&<section className="entry-list" aria-label="All thoughts">{filtered.length?filtered.map(entry=>row(entry)):empty('No matching thoughts','Search your thoughts or add a thought.')}</section>}
               {view === "Budget" && (
                 <>
                   <div className="money-summary">
@@ -1613,8 +1668,8 @@ function App() {
                     transactions.
                   </p>
                   <h3 className="day-title">
-                    The plan{" "}
-                    <span className="muted">· {planned.length} items</span>
+                    Budget{" "}
+                    <span className="muted">· {planned.length} thoughts</span>
                   </h3>
                   <section className="entry-list">
                     {planned.length
@@ -1635,13 +1690,13 @@ function App() {
                           </div>
                         ))
                       : empty(
-                          "No budget items",
+                          "No budget thoughts",
                           "Add planned income and expenses, then link actual transactions.",
                         )}
                   </section>
                   <h3 className="day-title">
-                    Actual transactions{" "}
-                    <span className="muted">· {transactions.length} items</span>
+                    Transactions{" "}
+                    <span className="muted">· {transactions.length} thoughts</span>
                   </h3>
                   <section className="entry-list">
                     {transactions.length ? (
@@ -1654,13 +1709,6 @@ function App() {
                   </section>
                 </>
               )}
-              <footer>
-                <span>
-                  {store.lastSync
-                    ? `Last synced ${new Date(store.lastSync).toLocaleString()}`
-                    : "Not synced yet"}
-                </span>
-              </footer>
             </>
           )}
         </div>
@@ -1683,19 +1731,84 @@ function App() {
       </div>
       {editor && (
         <Editor
+          key={editor.id}
           entry={editor}
+          initialAmount={trackingAmount?.id===editor.id?trackingAmount.value:undefined}
           connection={store.connection}
           token={session?.token}
           entries={store.entries}
           presetSections={editor.boardItems.some(item=>item.showList)?['note','list']:store.entries.some(e=>e.id===editor.id)||editor.id===copyDraftId?[]:defaultSections(view)}
-          onCopy={entry=>{const copy=copyEntry(entry);setCopyDraftId(copy.id);setEditor(copy)}}
+          onCopy={beginCopy}
+          replacingFuture={futureReplacement?.draftId===editor.id}
           save={saveEntry}
-          close={() => setEditor(null)}
+          close={() => {setEditor(null);setFutureReplacement(null);}}
         />
       )}
+      {copyChoice&&<RepeatingCopyDialog draft={copyChoice.draft} source={copyChoice.source} today={today} close={()=>setCopyChoice(null)} openDraft={(entry,replace)=>{
+        setFutureReplacement(replace?{draftId:entry.id,source:copyChoice.source}:null);
+        setCopyDraftId(entry.id);setEditor(entry);setCopyChoice(null);
+      }}/>}
+      {deleteTarget && <Modal title="Delete thought?" className="completion-dialog deletion-dialog" close={() => setDeleteTarget(null)}>
+        <div className="completion-body">
+          <div className="completion-task">
+            <span className="completion-check deletion-check" aria-hidden="true">🗑️</span>
+            <strong>{deleteTarget.name}</strong>
+          </div>
+          <p className="completion-description">This thought and links to it will be removed. This cannot be undone.</p>
+        </div>
+        <div className="completion-actions">
+          <button type="button" className="completion-delete" onClick={() => {
+            removeConfirmed(deleteTarget);
+            setDeleteTarget(null);
+          }}>Delete thought</button>
+          <button type="button" autoFocus className="primary" onClick={() => setDeleteTarget(null)}>Cancel</button>
+        </div>
+      </Modal>}
+      {completedTarget && <Modal title="Task completed" className="completion-dialog" close={() => setCompletedTarget(null)}>
+        <div className="completion-body">
+          <div className="completion-task">
+            <span className="completion-check" aria-hidden="true">✓</span>
+            <strong>{completedTarget.name}</strong>
+          </div>
+          <p className="completion-description">{completedTarget.repeat
+            ? 'This occurrence is complete.'
+            : 'Keep it in your completed tasks, or delete it.'}</p>
+          {completedTarget.budgetType && <div className="completion-tracking">
+            <div>
+              <strong>Track this {completedTarget.budgetType}?</strong>
+              <p>Create a linked transaction with the planned amount. Review it before saving.</p>
+            </div>
+            <button type="button" className="secondary" onClick={() => {
+              trackBudget(completedTarget, true);
+              setCompletedTarget(null);
+            }}>Track {completedTarget.budgetType}</button>
+          </div>}
+        </div>
+        <div className="completion-actions">
+          {!completedTarget.repeat && <button type="button" className="completion-delete" onClick={() => {
+            removeConfirmed(completedTarget);
+            setCompletedTarget(null);
+          }}>Delete task</button>}
+          <button type="button" autoFocus className="primary" onClick={() => setCompletedTarget(null)}>Keep task</button>
+        </div>
+      </Modal>}
       {settings && (
         <Modal title="Settings" close={() => setSettings(false)}>
           <div className="settings">
+            <section className="settings-sync" aria-label="Synchronization">
+              <h3>Sync</h3>
+              <p className="hint">{store.lastSync
+                ? `Last synced ${new Date(store.lastSync).toLocaleString()}`
+                : "Not synced yet"}</p>
+              {session && <>
+              <p className="hint" role="status">{busy || syncing ? 'Syncing…' : store.dirty ? 'Local changes are waiting to sync.' : 'Connected to Google. Changes sync automatically.'}</p>
+              <button type="button" className="secondary" disabled={busy || syncing} onClick={() => sync()}>
+                {busy || syncing ? 'Syncing…' : '🔄 Sync now'}
+              </button>
+              {error && <p className="error" role="alert">{error}</p>}
+              </>}
+            </section>
+
             <p>
               Connect your family’s Google Sheet. Apps Script verifies your
               Google account and checks the backend whitelist on every request.
@@ -1741,7 +1854,7 @@ function App() {
                   changed &&
                   store.dirty &&
                   !confirm(
-                    "Changing the backend will reset the shared revision. Export unsynced local items before continuing. Continue?",
+                    "Changing the backend will reset the shared revision. Export unsynced local thoughts before continuing. Continue?",
                   )
                 )
                   return;
@@ -1773,7 +1886,7 @@ function App() {
                   if (
                     !store.dirty ||
                     confirm(
-                      "Replace local items with the Sheet version? Export a backup first if you want to keep local changes.",
+                      "Replace local thoughts with the Sheet version? Export a backup first if you want to keep local changes.",
                     )
                   ) {
                     void sync(true);

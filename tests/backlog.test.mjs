@@ -41,7 +41,7 @@ test('copying creates an unsaved independent draft with shared values and no boa
   const copy=copyEntry(entry);
   assert.notEqual(copy.id,entry.id);assert.equal(copy.name,'Copy of Original');assert.equal(copy.note,'Body');assert.equal(copy.where,'Home');assert.deepEqual(copy.boardItems,[]);
   copy.who.push('Alex');assert.deepEqual(entry.who,['Sam']);
-  assert.deepEqual(defaultSections('Budget'),['money']);assert.deepEqual(defaultSections('Todo'),['note','task','ends']);assert.deepEqual(defaultSections('Calendar'),['note','begins','where']);
+  assert.deepEqual(defaultSections('Budget'),['money']);assert.deepEqual(defaultSections('Todo'),['note','task','when']);assert.deepEqual(defaultSections('Calendar'),['note','when','where']);
   const count=80+Object.values(mediaPlaceholderReferences).reduce((sum,theme)=>sum+theme.beginnings.length,0);
   const names=new Set();for(let a=0;a<count;a++)for(let b=0;b<count;b++){let call=0;names.add(fancyName(()=>((call++?b:a)+.1)/count))}assert.equal(names.size,13456);
 });

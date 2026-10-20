@@ -4,22 +4,32 @@ import { isPreviewImage } from './board-model';
 import type { Connection } from './storage';
 import { downloadFile, getFile, stageFile } from './files';
 import ImagePreview from './ImagePreview';
-export function AttachmentImage({file,entryId,connection,token,interactive=false}:{file:Attachment;entryId:string;connection:Connection;token?:string;interactive?:boolean}) {
+export function AttachmentImage({file,entryId,connection,token,onRemove,removalDisabled=false,itemName,note}:{file:Attachment;entryId:string;connection:Connection;token?:string;itemName?:string;note?:string;onRemove?:()=>void;removalDisabled?:boolean}) {
   const [previewOpen,setPreviewOpen]=useState(false);
   const ref=useRef<HTMLDivElement>(null);
   const [visible,setVisible]=useState(()=>!('IntersectionObserver' in window)),[source,setSource]=useState(''),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useEffect(()=>{if(!ref.current)return;if(!('IntersectionObserver' in window))return;const observer=new IntersectionObserver(items=>{if(items.some(i=>i.isIntersecting)){setVisible(true);observer.disconnect();}},{rootMargin:'150px'});observer.observe(ref.current);return()=>observer.disconnect();},[]);
   useEffect(()=>{if(!visible)return;let active=true;getFile(file,entryId,connection,token).then(url=>{if(active)setSource(url)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[visible,file,entryId,connection,token,retry]);
   const picture=<img draggable={false} src={source} alt={file.name} onError={()=>{setSource('');setError('This image could not be displayed.')}}/>;
-  return <div className="attachment-image" ref={ref}>{source?interactive?<button type="button" className="image-preview-trigger" aria-label={`Preview ${file.name}`} onClick={()=>setPreviewOpen(true)}>{picture}</button>:picture:error?<div><p role="alert">{error}</p><button type="button" className="secondary" onClick={()=>{setError('');setRetry(n=>n+1)}}>Retry image</button></div>:<span>{visible?'Loading image…':'Image'}</span>}{source&&previewOpen&&<ImagePreview source={source} name={file.name} onClose={()=>setPreviewOpen(false)}/>}</div>;
+  const actions=onRemove&&<div className="attachment-image-actions" role="group" aria-label={`Actions for ${file.name}`}>
+    <button type="button" aria-label={`Preview ${file.name}`} title="Preview image" disabled={!source} onClick={()=>setPreviewOpen(true)}><span aria-hidden="true">🔍</span></button>
+    <button type="button" aria-label={`Download ${file.name}`} title="Download image" onClick={()=>downloadFile(file,entryId,connection,token).catch(e=>setError(e.message))}><span aria-hidden="true">⬇️</span></button>
+    <button type="button" aria-label={`Remove ${file.name}`} title="Remove image" disabled={removalDisabled} onClick={onRemove}><span aria-hidden="true">🗑️</span></button>
+  </div>;
+  const fallback=error?<div className="attachment-image-message"><p role="alert">{error}</p><button type="button" className="secondary" onClick={()=>{setError('');setRetry(n=>n+1)}}>Retry image</button></div>:<span>{visible?'Loading image…':'Image'}</span>;
+  return <div className={`attachment-image${onRemove?' attachment-image-editable':''}`} ref={ref}>
+    {onRemove?<div className="attachment-image-frame">{source?picture:fallback}{actions}</div>:source?picture:fallback}
+    {source&&error&&<p role="alert" className="error">{error}</p>}
+    {source&&previewOpen&&<ImagePreview source={source} name={file.name} itemName={itemName} note={note} onClose={()=>setPreviewOpen(false)}/>}
+  </div>;
 }
-export default function Attachments({value,entryId,connection,token,onChange,onBusyChange}:{value:Attachment[];entryId:string;connection:Connection;token?:string;onChange:(files:Attachment[])=>void;onBusyChange:(busy:boolean)=>void}) {
-  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[preview,setPreview]=useState<string|null>(null);
+export default function Attachments({value,entryId,connection,token,itemName,note,onChange,onBusyChange}:{itemName?:string;note?:string;value:Attachment[];entryId:string;connection:Connection;token?:string;onChange:(files:Attachment[])=>void;onBusyChange:(busy:boolean)=>void}) {
+  const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const [dragging,setDragging]=useState(false);
   const input=useRef<HTMLInputElement>(null),dragDepth=useRef(0),adding=useRef(false);
   async function add(files:FileList|null){
     if(adding.current||!files?.length)return;
-    if(value.length+files.length>20){setError('An item can have up to 20 files.');return;}
+    if(value.length+files.length>20){setError('A thought can have up to 20 files.');return;}
     adding.current=true;
     setBusy(true);onBusyChange(true);setError('');
     let next=[...value];
@@ -43,10 +53,10 @@ export default function Attachments({value,entryId,connection,token,onChange,onB
     {busy&&<p role="status">Saving files on this device…</p>}
     {value.map(file=><div className="attachment-file" key={file.id}>
       <div className="attachment-file-heading"><strong>📎 {file.name}</strong><span>{Math.ceil(file.size/1024)} KB</span></div>
-      <div className="attachment-file-actions">{isPreviewImage(file)&&<button className="secondary" type="button" onClick={()=>setPreview(preview===file.id?null:file.id)}>{preview===file.id?'Hide image':'View image'}</button>}
-      <button type="button" className="secondary" onClick={()=>downloadFile(file,entryId,connection,token).catch(e=>setError(e.message))}>Download</button>
-      <button type="button" className="secondary" disabled={busy} onClick={()=>onChange(value.filter(f=>f.id!==file.id))}>Remove file</button></div>
-      {preview===file.id&&<AttachmentImage file={file} entryId={entryId} connection={connection} token={token}/>}
+      {isPreviewImage(file)?<AttachmentImage file={file} itemName={itemName} note={note} entryId={entryId} connection={connection} token={token} removalDisabled={busy} onRemove={()=>onChange(value.filter(f=>f.id!==file.id))}/>:<div className="attachment-file-actions">
+        <button type="button" className="secondary" onClick={()=>downloadFile(file,entryId,connection,token).catch(e=>setError(e.message))}>Download</button>
+        <button type="button" className="secondary" disabled={busy} onClick={()=>onChange(value.filter(f=>f.id!==file.id))}>Remove file</button>
+      </div>}
     </div>)}
   </div>;
 }

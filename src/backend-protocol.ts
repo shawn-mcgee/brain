@@ -1,4 +1,4 @@
-export const SYNC_API_VERSION=7;
+export const SYNC_API_VERSION=8;
 const upgradeMessage='The app and deployed Apps Script versions do not match. Deploy the current apps-script/Code.gs as a new web-app version, then reload this app. Your local changes have been kept.';
 export function checkSyncProtocol(response:{ok?:boolean;apiVersion?:number;code?:string;error?:string}):void {
   // Older deployments called every BoardViews item a calendar, rejecting groups.

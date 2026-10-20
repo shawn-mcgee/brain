@@ -9,7 +9,7 @@ export function entryTags(entry:Entry):string[] {
   if(entry.task)tags.push(entry.completed?'✓ Done':'☐ Task');
   if(entry.beginsOn)tags.push(`Begins ${date(entry.beginsOn)}${entry.beginsAt?' '+entry.beginsAt:''}`);
   if(entry.endsOn)tags.push(`Due ${date(entry.endsOn)}${entry.endsAt?' '+entry.endsAt:''}`);
-  if(entry.repeat)tags.push(`↻ ${entry.repeat}`);
+  if(entry.repeat)tags.push(`↻ ${entry.repeat}${entry.repeatUntil?' until '+date(entry.repeatUntil):''}`);
   if(entry.budgetType||entry.transactionType)tags.push(`${entry.budgetType?'Budget':'Transaction'} · ${entry.budgetType||entry.transactionType} ${new Intl.NumberFormat(undefined,{style:'currency',currency:'USD'}).format(entry.amount)}`);
   if(entry.requires.length)tags.push(`Waiting on ${entry.requires.length}`);
   if(entry.attachments.length)tags.push(`📎 ${entry.attachments.length}`);

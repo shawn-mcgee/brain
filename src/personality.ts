@@ -1,6 +1,6 @@
 import type { Entry } from "./domain.ts";
 const themes = {
-  money: ["🪙", "💵", "🧾", "💰"],
+  money: ["🪙", "💵", "💸", "💰"],
   chores: ["🧹", "🫧", "🧽", "✨"],
   food: ["🥕", "🍎", "🥦", "🛒"],
   garden: ["🌱", "🍃", "🌼", "🌻"],

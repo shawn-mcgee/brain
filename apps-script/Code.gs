@@ -1,5 +1,5 @@
 /* Brain backend. Configure Script Properties; see README.md. */
-const COLUMNS = ['id', 'note', 'who', 'task', 'completed', 'completedDates', 'requires', 'beginsOn', 'beginsAt', 'endsOn', 'endsAt', 'repeat', 'budgetType', 'transactionType', 'amount', 'budgetId', 'createdAt', 'updatedAt', 'boardItems', 'attachments', 'name', 'where', 'color', 'tags', 'group', 'list'];
+const COLUMNS = ['id', 'note', 'who', 'task', 'completed', 'completedDates', 'requires', 'beginsOn', 'beginsAt', 'endsOn', 'endsAt', 'repeat', 'budgetType', 'transactionType', 'amount', 'budgetId', 'createdAt', 'updatedAt', 'boardItems', 'attachments', 'name', 'where', 'color', 'tags', 'group', 'list', 'repeatUntil'];
 
 function doPost(event) {
   let lock;
@@ -10,13 +10,13 @@ function doPost(event) {
     if (!['read', 'write', 'file.get', 'file.put'].includes(body.action)) throw new Error('Unknown action.');
     const spreadsheetId = required_(properties, 'SPREADSHEET_ID');
     if (body.action.startsWith('file.')) return attachmentRequest_(body, spreadsheetId);
-    if(body.action==='write'&&body.apiVersion!==7)return json_({ok:false,code:'UPGRADE_REQUIRED',error:'Reload the current app before syncing. This backend requires sync API version 7.'});
+    if(body.action==='write'&&body.apiVersion!==8)return json_({ok:false,code:'UPGRADE_REQUIRED',error:'Reload the current app before syncing. This backend requires sync API version 8.'});
     if (body.action === 'write') body.entries = (body.entries || []).map(entry => normalizeEntryName_({...entry, boardItems: entry.boardItems || [], attachments: entry.attachments || []}));
     // Readers can use a previously committed snapshot without waiting for a writer.
     // Authenticate first; the shared cache contains no per-user credentials.
     if (body.action === 'read') {
       const cached = cachedSnapshot_(spreadsheetId, Number(properties.getProperty('REVISION') || 0));
-      if (cached) return json_({ ok: true, apiVersion: 7, entries: cached.entries, boardViews:cached.boardViews||[], revision: cached.revision, user: user });
+      if (cached) return json_({ ok: true, apiVersion: 8, entries: cached.entries, boardViews:cached.boardViews||[], revision: cached.revision, user: user });
     } else { validateEntries_(body.entries); if(body.boardViews!==undefined) validateBoardViews_(body.boardViews); }
     lock = LockService.getScriptLock();
     if (!lock.tryLock(1000)) return json_({ ok: false, code: 'BUSY', error: 'Another sync is in progress. Try again.' });
@@ -29,10 +29,10 @@ function doPost(event) {
     }
     if (sheet.getMaxColumns() < COLUMNS.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), COLUMNS.length - sheet.getMaxColumns());
     const headers = sheet.getRange(1, 1, 1, COLUMNS.length).getValues()[0];
-    if([18,20,21,25].some(width=>JSON.stringify(headers.slice(0,width))===JSON.stringify(COLUMNS.slice(0,width))&&headers.slice(width).every(value=>!value)))sheet.getRange(1,1,1,COLUMNS.length).setValues([COLUMNS]);
+    if([18,20,21,25,26].some(width=>JSON.stringify(headers.slice(0,width))===JSON.stringify(COLUMNS.slice(0,width))&&headers.slice(width).every(value=>!value)))sheet.getRange(1,1,1,COLUMNS.length).setValues([COLUMNS]);
     else if(JSON.stringify(headers)!==JSON.stringify(COLUMNS))throw new Error('Entries sheet headers have changed. Restore the original headers before syncing.');
     let revision = Number(properties.getProperty('REVISION') || 0);
-    const viewSheet=attachmentSheet_(book,'BoardViews',['id','item']);
+    const viewSheet=attachmentSheet_(book,'BoardViews',['id','thought']);
     let boardViews=viewSheet.getLastRow()>1 ? viewSheet.getRange(2,2,viewSheet.getLastRow()-1,1).getValues().filter(row=>row[0]).map(row=>JSON.parse(row[0])) : [];
     const previousLastRow = sheet.getLastRow();
     let entries;
@@ -63,7 +63,7 @@ function doPost(event) {
     } else {
       const rows = previousLastRow > 1 ? sheet.getRange(2, 1, previousLastRow - 1, COLUMNS.length).getValues() : [];
       entries = rows.filter(row => row[0]).map(row => normalizeEntryName_(Object.fromEntries(COLUMNS.map((column, i) => [column, i>=20&&!row[i]?undefined:i >= 18 && i<20 && !row[i] ? [] : JSON.parse(row[i])]))));
-      if(rows.some(row=>row[0]&&[20,21,22,23,24,25].some(index=>!row[index]))) {
+      if(rows.some(row=>row[0]&&[20,21,22,23,24,25,26].some(index=>!row[index]))) {
         sheet.getRange(2,1,entries.length,COLUMNS.length).setNumberFormat('@').setValues(entries.map(entry=>COLUMNS.map(column=>JSON.stringify(entry[column]))));
         // Persist the migration under the same lock and invalidate older writers.
         if(previousLastRow>entries.length+1)sheet.getRange(entries.length+2,1,previousLastRow-entries.length-1,COLUMNS.length).clearContent();
@@ -73,7 +73,7 @@ function doPost(event) {
       }
     }
     cacheSnapshot_(spreadsheetId, { entries: entries, boardViews:boardViews, revision: revision });
-    return json_({ ok: true, apiVersion: 7, entries: entries, boardViews:boardViews, revision: revision, user: user });
+    return json_({ ok: true, apiVersion: 8, entries: entries, boardViews:boardViews, revision: revision, user: user });
   } catch (error) {
     return json_({ ok: false, error: error.message || 'Request failed.' });
   } finally {
@@ -83,7 +83,7 @@ function doPost(event) {
 
 function cachedSnapshot_(spreadsheetId, revision) {
   try {
-    const raw = CacheService.getScriptCache().get('brain:v7:' + spreadsheetId + ':' + revision);
+    const raw = CacheService.getScriptCache().get('brain:v8:' + spreadsheetId + ':' + revision);
     const snapshot = raw ? JSON.parse(raw) : null;
     return snapshot && snapshot.revision === revision && Array.isArray(snapshot.entries) ? snapshot : null;
   } catch (_) { return null; } // Cache eviction/unavailability is harmless.
@@ -92,7 +92,7 @@ function cacheSnapshot_(spreadsheetId, snapshot) {
   try {
     const value = JSON.stringify(snapshot);
     // Conservative limit stays below CacheService's 100 KB per value, even for emoji.
-    if (value.length < 22000) CacheService.getScriptCache().put('brain:v7:' + spreadsheetId + ':' + snapshot.revision, value, 120);
+    if (value.length < 22000) CacheService.getScriptCache().put('brain:v8:' + spreadsheetId + ':' + snapshot.revision, value, 120);
   } catch (_) { /* A committed write must not fail because caching is unavailable. */ }
 }
 
@@ -129,10 +129,11 @@ function validateEntries_(entries) {
     if (!entry.id || ids.has(entry.id) || !entry.name.trim() || typeof entry.task !== 'boolean' || typeof entry.completed !== 'boolean' || typeof entry.amount !== 'number' || !Number.isFinite(entry.amount) || entry.amount < 0) throw new Error('Invalid or duplicate entry.');
     if (!['','income','expense'].includes(entry.budgetType) || !['','income','expense'].includes(entry.transactionType) || entry.budgetType && entry.transactionType) throw new Error('Invalid financial type.');
     if (!['','Daily','Weekly','Monthly','Quarterly','Semi-annually','Annually'].includes(entry.repeat)) throw new Error('Invalid repeat interval.');
-    [entry.beginsOn, entry.endsOn, ...entry.completedDates].filter(Boolean).forEach(value => {
+    [entry.beginsOn, entry.endsOn, entry.repeatUntil, ...entry.completedDates].filter(Boolean).forEach(value => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < '1900-01-01' || value > '2200-12-31' || new Date(value + 'T12:00:00Z').toISOString().slice(0,10) !== value) throw new Error('Invalid date.');
     });
     [entry.beginsAt, entry.endsAt].filter(Boolean).forEach(value => { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new Error('Invalid time.'); });
+    if(entry.repeatUntil&&(!entry.repeat||entry.repeatUntil<(entry.beginsOn||entry.endsOn)))throw new Error('Invalid repeat end date.');
     if (entry.beginsAt && !entry.beginsOn || entry.endsAt && !entry.endsOn || entry.repeat && !entry.beginsOn && !entry.endsOn) throw new Error('A date is required.');
     if (entry.beginsOn && entry.endsOn && (entry.endsOn < entry.beginsOn || entry.endsOn === entry.beginsOn && entry.beginsAt && entry.endsAt && entry.endsAt < entry.beginsAt)) throw new Error('Invalid date range.');
     if(entry.color&&!['yellow','pink','blue','green','white','purple','orange','gray'].includes(entry.color)||entry.tags.length>200||entry.tags.some(tag=>tag.length>500))throw new Error('Invalid entry color or tags.');
@@ -160,10 +161,10 @@ function json_(value) { return ContentService.createTextOutput(JSON.stringify(va
 function validateMetadata_(entry) {
   if (!Array.isArray(entry.boardItems) || entry.boardItems.length > 100 || !Array.isArray(entry.attachments) || entry.attachments.length > 20) throw new Error('Invalid board items or attachments.');
   const ids = new Set();
-  entry.boardItems.forEach(item => {
-    if (!item || typeof item.id !== 'string' || !item.id || item.id.length>100 || ids.has(item.id) || !['sticky','polaroid','calendar','group'].includes(item.kind) || !['yellow','pink','blue','green','white','purple','orange','gray'].includes(item.color) || !['x','y','width','height','z'].every(k => typeof item[k] === 'number' && Number.isFinite(item[k]) && Math.abs(item[k]) <= 10000000) || item.width < 220 || item.width > 1200 || item.height < 180 || item.height > 1200) throw new Error('Invalid board layout.');
-    if (['pinned','archived','calendarDynamic','customColor','collapsed','showList'].some(k=>item[k]!==undefined&&typeof item[k]!=='boolean') || item.title!==undefined&&(typeof item.title!=='string'||item.title.length>10000) || item.calendarPeriod!==undefined&&!['day','week','month'].includes(item.calendarPeriod) || item.calendarDate!==undefined&&(!/^\d{4}-\d{2}-\d{2}$/.test(item.calendarDate)||item.calendarDate<'1900-01-01'||item.calendarDate>'2200-12-31'||!Number.isFinite(Date.parse(item.calendarDate))||new Date(item.calendarDate+'T12:00:00Z').toISOString().slice(0,10)!==item.calendarDate)) throw new Error('Invalid board options.');
-    ids.add(item.id);
+  entry.boardItems.forEach(thought => {
+    if (!thought || typeof thought.id !== 'string' || !thought.id || thought.id.length>100 || ids.has(thought.id) || !['sticky','polaroid','calendar','group'].includes(thought.kind) || !['yellow','pink','blue','green','white','purple','orange','gray'].includes(thought.color) || !['x','y','width','height','z'].every(k => typeof thought[k] === 'number' && Number.isFinite(thought[k]) && Math.abs(thought[k]) <= 10000000) || thought.width < 220 || thought.width > 1200 || thought.height < 180 || thought.height > 1200) throw new Error('Invalid board layout.');
+    if (['pinned','archived','calendarDynamic','customColor','collapsed','showList'].some(k=>thought[k]!==undefined&&typeof thought[k]!=='boolean') || thought.title!==undefined&&(typeof thought.title!=='string'||thought.title.length>10000) || thought.calendarPeriod!==undefined&&!['day','week','month'].includes(thought.calendarPeriod) || thought.calendarDate!==undefined&&(!/^\d{4}-\d{2}-\d{2}$/.test(thought.calendarDate)||thought.calendarDate<'1900-01-01'||thought.calendarDate>'2200-12-31'||!Number.isFinite(Date.parse(thought.calendarDate))||new Date(thought.calendarDate+'T12:00:00Z').toISOString().slice(0,10)!==thought.calendarDate)) throw new Error('Invalid board options.');
+    ids.add(thought.id);
   });
   ids.clear();
   entry.attachments.forEach(file => { validateFileMetadata_(file); if (ids.has(file.id)) throw new Error('Duplicate attachment.'); ids.add(file.id); });
@@ -236,6 +237,9 @@ function normalizeEntryName_(entry) {
   ['where','color','group'].forEach(key=>{if(entry[key]===undefined)entry[key]='';});
   if(entry.tags===undefined)entry.tags=[];
   if(entry.list===undefined)entry.list=[];
+  if(entry.repeatUntil===undefined)entry.repeatUntil='';
+  if(entry.beginsOn&&!entry.endsOn){entry.endsOn=entry.beginsOn;entry.endsAt=entry.beginsAt;}
+  else if(entry.endsOn&&!entry.beginsOn){entry.beginsOn=entry.endsOn;entry.beginsAt=entry.endsAt;}
   if(entry.name===undefined&&typeof entry.note==='string') {
     const lines=entry.note.trim().split(/\r?\n/);
     return {...entry,name:lines[0],note:lines.slice(1).join('\n')};
@@ -247,7 +251,7 @@ function validateList_(list) {
   if(!Array.isArray(list)||list.length>200||JSON.stringify(list).length>40000)throw new Error('Invalid list size.');
   const ids=new Set();
   list.forEach(line=>{
-    if(!line||typeof line.id!=='string'||!line.id||line.id.length>100||ids.has(line.id)||typeof line.text!=='string'||!line.text.trim()||line.text.length>1000||typeof line.completed!=='boolean'||!Array.isArray(line.completedDates)||line.completedDates.some(d=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||d<'1900-01-01'||d>'2200-12-31'||!Number.isFinite(Date.parse(d))||new Date(d+'T12:00:00Z').toISOString().slice(0,10)!==d))throw new Error('Invalid list item.');
+    if(!line||typeof line.id!=='string'||!line.id||line.id.length>100||ids.has(line.id)||typeof line.text!=='string'||!line.text.trim()||line.text.length>1000||typeof line.completed!=='boolean'||!Array.isArray(line.completedDates)||line.completedDates.some(d=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||d<'1900-01-01'||d>'2200-12-31'||!Number.isFinite(Date.parse(d))||new Date(d+'T12:00:00Z').toISOString().slice(0,10)!==d))throw new Error('Invalid list line.');
     ids.add(line.id);
   });
 }
