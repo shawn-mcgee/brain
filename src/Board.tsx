@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { Entry } from './domain';
 import { blankEntry } from './domain';
-import { newBoardItem, screenToBoard, resizeBoardItem, zoomAtPoint, wheelZoomFactor, pinchBoardView } from './board-model';
+import { newBoardItem, screenToBoard, resizeBoardItem, zoomAtPoint, wheelZoomFactor, pinchBoardView, isPreviewImage } from './board-model';
 import type { BoardItem, BoardKind } from './board-model';
 import type { Connection } from './storage';
 import BoardCard from './BoardCard';
@@ -92,7 +92,7 @@ export default function Board({entries,boardViews,onViewsChange,onRenameGroup,co
   const matches=useMemo(()=>{const search=query.toLowerCase();return new Set(all.filter(({entry,item})=>!search||(entry?entrySearchText(entry):item.title?.toLowerCase()||'calendar').includes(search)).map(({item})=>item.id));},[all,query]);
   function setGroup(name:string,patch:Partial<BoardItem>){const state=boardViews.filter(item=>item.kind==='group'&&item.title===name).sort((a,b)=>a.id.localeCompare(b.id))[0];if(state)onViewsChange(boardViews.map(item=>item.id===state.id?{...item,...patch}:item));else onViewsChange([...boardViews,{...newBoardItem('group'),title:name,...patch}]);}
   function applyLayout(cards:{entry:Entry;item:BoardItem}[],points:{id:string;x:number;y:number}[]){onLayout(points.map(point=>({entryId:cards.find(card=>card.item.id===point.id)!.entry.id,itemId:point.id,patch:{x:point.x,y:point.y}})));}
-  function update(item:BoardItem,entry:Entry|undefined,patch:Partial<BoardItem>){if(patch.archived){if(entry)onRemoveCard(entry.id,item.id);else onViewsChange(boardViews.filter(current=>current.id!==item.id));return;}if(entry)onUpdate(entry.id,item.id,patch);else onViewsChange(boardViews.map(current=>current.id===item.id?{...current,...patch}:current));}
+  function update(item:BoardItem,entry:Entry|undefined,patch:Partial<BoardItem>){if(patch.width!==undefined||patch.height!==undefined)patch={...patch,fitImage:false};if(patch.archived){if(entry)onRemoveCard(entry.id,item.id);else onViewsChange(boardViews.filter(current=>current.id!==item.id));return;}if(entry)onUpdate(entry.id,item.id,patch);else onViewsChange(boardViews.map(current=>current.id===item.id?{...current,...patch}:current));}
   const maxZ=useMemo(()=>all.reduce((n,v)=>Math.max(n,v.item.z),0)+1,[all]);
   useEffect(()=>{if(!viewport.current)return;const observer=new ResizeObserver(items=>{const rect=items[0]?.contentRect;if(rect)setSize({width:rect.width,height:rect.height})});observer.observe(viewport.current);return()=>observer.disconnect()},[]);
   useEffect(()=>{const timer=setTimeout(()=>{try{localStorage.setItem('brain-board-view-v1',JSON.stringify(view))}catch{}},250);return()=>clearTimeout(timer)},[view]);
@@ -120,7 +120,7 @@ export default function Board({entries,boardViews,onViewsChange,onRenameGroup,co
   function center(kind:BoardKind){const width=kind==='calendar'?840:320,height=kind==='calendar'?850:360;return screenToBoard({x:Math.max(16,(size.width-width*camera.get().zoom)/2),y:Math.max(16,(size.height-height*camera.get().zoom)/2)},camera.get())}
   function add(kind:BoardKind|'list',existing?:Entry){
     const cardKind=kind==='list'?'sticky':kind;
-    const point=center(cardKind),item={...newBoardItem(cardKind,point.x,point.y,maxZ),...(kind==='list'?{showList:true,color:'green'}:{})};
+    const point=center(cardKind),item={...newBoardItem(cardKind,point.x,point.y,maxZ),...(kind==='list'?{showList:true,color:'green'}:{}),...(kind==='polaroid'||existing?.attachments.some(isPreviewImage)?{fitImage:true}:{})};
     setError('');
     if(kind==='calendar'&&!existing){if(boardViews.length>=100){setError('The board can have up to 100 calendar views. Remove an existing view first.');return;}onViewsChange([...boardViews,item]);}
     else if(existing){if(isOnBoard(existing))return;if(existing.boardItems.length>=100){setError('This thought already has 100 board cards.');return;}onPin(existing,item);}

@@ -491,3 +491,14 @@
   border-color:#b76570;
   box-shadow:inset 0 0 0 1px #b76570;
 }
+
+:root[data-theme] .board-card-header .board-command-toggle {
+  display:grid; place-items:center; width:44px; min-width:44px; max-width:44px;
+  height:44px; min-height:44px; max-height:44px; padding:4px;
+  border:1px solid var(--paper-deep,var(--theme-border)); border-radius:8px;
+  background:var(--thought-detail-bg,var(--theme-raised)); color:var(--paper-ink,var(--theme-text)); font-size:22px;
+}
+:root[data-theme] .board-card-header .board-command-toggle:hover {
+  background:var(--thought-control-hover-bg,var(--theme-hover));
+  border-color:var(--thought-control-hover-border,var(--theme-border));
+}

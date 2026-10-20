@@ -10,6 +10,7 @@ import {AttachmentImage} from './Attachments';
 import {entryTags} from './board-tags';
 import Checklist from './Checklist';
 import InlineText from './InlineText';
+import {useCardMarquee} from './useCardMarquee';
 import LocationLinks from './LocationLinks';
 import {pinnedEntries,reorderPinned} from './pinned-model';
 
@@ -26,31 +27,11 @@ function PinnedCard({entry,entries,connection,token,onEdit,onEntryChange,onTrack
   const [taskError,setTaskError]=useState('');
   const [listOpen,setListOpen]=useState(false);
   const cardRef=useRef<HTMLElement>(null);
-  const [hovered,setHovered]=useState(false);
-  useEffect(()=>{
-    if(!hovered||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-    let frame=0,start:number|undefined;
-    let previous:HTMLButtonElement|null=null;
-    function scrollName(now:number){
-      const title=cardRef.current?.querySelector<HTMLButtonElement>('button.pinned-title')||null;
-      if(title!==previous){if(previous)previous.scrollLeft=0;previous=title;start=undefined;}
-      if(title){
-        const distance=title.scrollWidth-title.clientWidth;
-        if(distance>0){
-          start??=now;
-          const travel=distance/35*1000,pause=900,cycle=2*(travel+pause),elapsed=(now-start)%cycle;
-          title.scrollLeft=elapsed<pause?0:elapsed<pause+travel?(elapsed-pause)/travel*distance:elapsed<2*pause+travel?distance:distance*(1-(elapsed-2*pause-travel)/travel);
-        }else {title.scrollLeft=0;start=undefined;}
-      }
-      frame=requestAnimationFrame(scrollName);
-    }
-    frame=requestAnimationFrame(scrollName);
-    return()=>{cancelAnimationFrame(frame);if(previous)previous.scrollLeft=0;};
-  },[hovered,entry.name]);
+  const marquee=useCardMarquee(cardRef,'button.pinned-title',entry.name);
   const done=isDone(entry,checklistDate(entry));
   const images=entry.attachments.filter(isPreviewImage);
   const index=Math.max(0,images.findIndex(photo=>photo.id===photoId)),photo=images[index];
-  return <article ref={cardRef} className={`pinned-card${entry.color?` item-colored board-${entry.color}`:''}`} aria-label={entry.name} onMouseEnter={()=>setHovered(true)} onMouseLeave={()=>setHovered(false)}>
+  return <article ref={cardRef} className={`pinned-card${entry.color?` item-colored board-${entry.color}`:''}`} aria-label={entry.name} {...marquee}>
     <header>{grip}<span className="pinned-header-spacer" aria-hidden="true"/><div className="thought-controls" role="group" aria-label={`Actions for ${entry.name}`}><div ref={colorPicker} className="board-color-picker pinned-color-picker" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))setColorOpen(false);}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();setColorOpen(false);colorButton.current?.focus();}}}>
       <button ref={colorButton} type="button" className="board-color-swatch" aria-label={`Card color: ${entry.color||'default'}`} title="Change color" aria-expanded={colorOpen} onClick={()=>setColorOpen(open=>!open)}><span/></button>
       {colorOpen&&<div className="board-color-options" role="group" aria-label="Thought color">

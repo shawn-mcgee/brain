@@ -1,5 +1,5 @@
 export type BoardKind = 'sticky' | 'polaroid' | 'calendar' | 'group';
-export type BoardItem = { id: string; kind: BoardKind; x: number; y: number; width: number; height: number; z: number; color: string; showList?:boolean; customColor?:boolean; pinned?:boolean; collapsed?:boolean; archived?:boolean; title?:string; calendarPeriod?:'day'|'week'|'month'; calendarDynamic?:boolean; calendarDate?:string };
+export type BoardItem = { id: string; kind: BoardKind; x: number; y: number; width: number; height: number; z: number; color: string; showList?:boolean; fitImage?:boolean; customColor?:boolean; pinned?:boolean; collapsed?:boolean; archived?:boolean; title?:string; calendarPeriod?:'day'|'week'|'month'; calendarDynamic?:boolean; calendarDate?:string };
 export type Attachment = { id: string; name: string; type: string; size: number; createdAt: string };
 export const MAX_FILE_SIZE = 2 * 1024 * 1024;
 export const boardColors = ['yellow','pink','blue','green','white','purple','orange','gray'] as const;
@@ -12,7 +12,7 @@ export function validateBoardFields(boardItems: unknown, attachments: unknown): 
   for (const item of boardItems) {
     if (!item || typeof item.id!=='string' || !item.id || item.id.length>100 || ids.has(item.id) || !['sticky','polaroid','calendar','group'].includes(item.kind) || !boardColors.includes(item.color) || !['x','y','width','height','z'].every(k=>Number.isFinite(item[k]) && Math.abs(item[k])<=10000000) || item.width<220 || item.width>1200 || item.height<180 || item.height>1200) return 'Invalid board layout.';
     ids.add(item.id);
-    if (['pinned','archived','calendarDynamic','customColor','collapsed','showList'].some(k=>item[k]!==undefined && typeof item[k]!=='boolean') || item.title!==undefined && (typeof item.title!=='string'||item.title.length>10000) || item.calendarPeriod!==undefined && !['day','week','month'].includes(item.calendarPeriod) || item.calendarDate!==undefined && !validBoardDate(item.calendarDate)) return 'Invalid board options.';
+    if (['pinned','archived','calendarDynamic','customColor','collapsed','showList','fitImage'].some(k=>item[k]!==undefined && typeof item[k]!=='boolean') || item.title!==undefined && (typeof item.title!=='string'||item.title.length>10000) || item.calendarPeriod!==undefined && !['day','week','month'].includes(item.calendarPeriod) || item.calendarDate!==undefined && !validBoardDate(item.calendarDate)) return 'Invalid board options.';
   }
   ids.clear();
   for (const file of attachments) {

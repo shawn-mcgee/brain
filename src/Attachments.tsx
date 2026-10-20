@@ -4,13 +4,13 @@ import { isPreviewImage } from './board-model';
 import type { Connection } from './storage';
 import { downloadFile, getFile, stageFile } from './files';
 import ImagePreview from './ImagePreview';
-export function AttachmentImage({file,entryId,connection,token,onRemove,removalDisabled=false,itemName,note}:{file:Attachment;entryId:string;connection:Connection;token?:string;itemName?:string;note?:string;onRemove?:()=>void;removalDisabled?:boolean}) {
+export function AttachmentImage({file,entryId,connection,token,onRemove,removalDisabled=false,itemName,note,onImageLoad}:{onImageLoad?:()=>void;file:Attachment;entryId:string;connection:Connection;token?:string;itemName?:string;note?:string;onRemove?:()=>void;removalDisabled?:boolean}) {
   const [previewOpen,setPreviewOpen]=useState(false);
   const ref=useRef<HTMLDivElement>(null);
   const [visible,setVisible]=useState(()=>!('IntersectionObserver' in window)),[source,setSource]=useState(''),[error,setError]=useState(''),[retry,setRetry]=useState(0);
   useEffect(()=>{if(!ref.current)return;if(!('IntersectionObserver' in window))return;const observer=new IntersectionObserver(items=>{if(items.some(i=>i.isIntersecting)){setVisible(true);observer.disconnect();}},{rootMargin:'150px'});observer.observe(ref.current);return()=>observer.disconnect();},[]);
   useEffect(()=>{if(!visible)return;let active=true;getFile(file,entryId,connection,token).then(url=>{if(active)setSource(url)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[visible,file,entryId,connection,token,retry]);
-  const picture=<img draggable={false} src={source} alt={file.name} onError={()=>{setSource('');setError('This image could not be displayed.')}}/>;
+  const picture=<img draggable={false} src={source} alt={file.name} onLoad={onImageLoad} onError={()=>{setSource('');setError('This image could not be displayed.')}}/>;
   const actions=onRemove&&<div className="attachment-image-actions" role="group" aria-label={`Actions for ${file.name}`}>
     <button type="button" aria-label={`Preview ${file.name}`} title="Preview image" disabled={!source} onClick={()=>setPreviewOpen(true)}><span aria-hidden="true">🔍</span></button>
     <button type="button" aria-label={`Download ${file.name}`} title="Download image" onClick={()=>downloadFile(file,entryId,connection,token).catch(e=>setError(e.message))}><span aria-hidden="true">⬇️</span></button>
