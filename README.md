@@ -133,6 +133,12 @@ Vite uses relative asset URLs, so the same build works at `https://YOUR-USERNAME
 
 See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
+### Install on Android
+
+After deploying the frontend over HTTPS, open it in Chrome on Android and use the browser menu's **Install app** or **Add to Home screen** option. The app launches in a standalone window using the name and icons in `public/manifest.webmanifest`. Its start URL, scope, and icon paths are relative, so installation works on both a GitHub Pages project path and a custom domain. The app identity defaults to its start URL.
+
+Installation does not add offline support: no service worker or offline app cache is registered. Opening the app, Google sign-in, and synchronization require a network connection. Existing local storage and synchronization behavior remain unchanged. Manifest requirements follow [Chrome's installation criteria](https://web.dev/articles/install-criteria).
+
 ### Data and synchronization behavior
 
 - Thoughts are saved locally after each edit and sync automatically one second after the last edit while signed in. Clean workspaces pull remote changes every 30 seconds. **Sync now** in Settings starts an immediate sync, and reconnecting to the network triggers another attempt. Access tokens still expire normally; sign in again when prompted.
@@ -140,7 +146,7 @@ See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pa
 - On a revision conflict, the app downloads the latest snapshot, performs a three-way merge against its saved last-synced snapshot, and retries up to five writes per sync attempt. Independent thought and field changes combine; list fields combine additions and removals. A deletion removes an unchanged thought, but a concurrent edit survives a deletion. Concurrent changes to the same scalar field retain the local version and preserve the remote version as a separate thought labeled **Version preserved during automatic merge**. Invalid combined dates or financial types also preserve both versions. Dangling links are detached, and dependency edges that would create a cycle are removed with a merge notice.
 - Local edits made during a sync are rebased onto the acknowledged snapshot and queued for another upload. Network failures leave unsynced local changes intact and retry with exponential backoff, capped at 30 seconds. If the browser closes, changes remain cached for the next sign-in; this is not a background service worker.
 - A local workspace with unsynced thoughts automatically merges with an existing Sheet after signing in. Older browser caches without a baseline merge conservatively by keeping thoughts from both sides, rather than inferring deletions. Settings still offers **Load Sheet version** to explicitly discard the current local changes. Importing an older backup replaces matching IDs locally, so review it before automatic upload.
-- Sign-out hides the workspace but keeps its local cache for the next family sign-in. Local data is not encrypted; use a trusted browser profile. The app is not an offline-installed PWA.
+- Sign-out hides the workspace but keeps its local cache for the next family sign-in. Local data is not encrypted; use a trusted browser profile. The app can be installed using its web manifest but does not provide offline loading.
 - Time fields require their corresponding dates. Repetition requires a date and clamps missing month days to that month's last day without drifting the original anchor.
 - Todo includes tasks plus upcoming or ongoing thoughts with a start or end date. Dated thoughts receive highlights such as **Starts today**, **Ends today**, **In progress**, and **Coming up**. **All** includes undated and overdue tasks, plus the next upcoming occurrence of each dated non-task thought.
 - Todo and Calendar offer **All**, **Day**, **Week**, and **Month**. Arrow buttons step one selected period at a time, and a small title names the relative period (for example, **Last Week of October 11**). Todo starts on the current week; Calendar starts on the current month. Undated tasks appear once in an **Any time** section at the bottom of the current agenda, including All. Weeks start on Sunday.

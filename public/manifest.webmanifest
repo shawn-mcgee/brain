@@ -1,0 +1,26 @@
+{
+  "name": "brain",
+  "short_name": "brain",
+  "description": "Shared thoughts, tasks, calendar, and budget.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#faf4f7",
+  "theme_color": "#873e66",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "app-icons/brain-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "app-icons/brain-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
