@@ -387,11 +387,30 @@
 
 /* Pinned cards share the board's pastel paper and dark ink in dark mode. */
 :root[data-theme=dark] .pinned-card.item-colored {
+  --theme-surface:color-mix(in srgb,var(--paper) 65%,white);
+  --theme-raised:color-mix(in srgb,var(--paper) 85%,white);
+  --theme-hover:color-mix(in srgb,var(--paper) 60%,white);
   --theme-text:var(--paper-ink);
   --theme-muted:var(--paper-muted);
   --theme-border:var(--paper-deep);
+  --theme-accent:var(--thought-check-accent);
   color-scheme:light;
 }
+:root[data-theme] .pinned-card .item-checklist :is(input:not([type=checkbox]),textarea) {
+  background:var(--thought-detail-bg);
+  color:var(--paper-ink,#29271f);
+  border-color:var(--paper-deep);
+}
+:root[data-theme] .pinned-card .item-checklist input::placeholder { color:var(--paper-muted,#61525b); opacity:1; }
+:root[data-theme] .pinned-card .checklist-line .board-inline-text { background:transparent; color:var(--paper-ink,#29271f); }
+:root[data-theme] .pinned-card .checklist-line .is-complete { color:var(--paper-muted,#61525b); }
+:root[data-theme] .pinned-card :is(.checklist-line,.checklist-add) button:not(.board-inline-text) {
+  background:var(--thought-detail-bg);
+  color:var(--paper-ink,#29271f);
+  border-color:var(--paper-deep);
+}
+:root[data-theme] .pinned-card .item-checklist button:hover:not(:disabled) { background:var(--paper-deep); }
+:root[data-theme] .pinned-card .item-checklist :focus-visible { outline-color:var(--thought-check-accent); }
 
 /* Uncolored pinned thoughts use the app surface until Color is attached. */
 :root[data-theme] .pinned-card:not(.item-colored) {
