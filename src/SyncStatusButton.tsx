@@ -1,8 +1,8 @@
 import {useEffect,useId,useRef,useState} from 'react';
 
-export default function SyncStatusButton({status,state}:{status:string;state:string}){
+export default function SyncStatusButton({status,state,feedback=0}:{status:string;state:string;feedback?:number}){
   const [pinned,setPinned]=useState(false),[hovered,setHovered]=useState(false),[focused,setFocused]=useState(false);
-  const container=useRef<HTMLButtonElement>(null),id=useId();
+  const container=useRef<HTMLDivElement>(null),id=useId();
   const expanded=pinned||hovered||focused;
   useEffect(()=>{
     if(!pinned)return;
@@ -10,18 +10,22 @@ export default function SyncStatusButton({status,state}:{status:string;state:str
     document.addEventListener('pointerdown',dismiss);
     return()=>document.removeEventListener('pointerdown',dismiss);
   },[pinned]);
-  return <>
-    <button ref={container} type="button" className={`floating-sync-status ${state}${expanded?' is-expanded':''}`}
+  return <div ref={container} className={`sync-status-control${expanded?' is-expanded':''}`}
+    onPointerEnter={event=>{if(event.pointerType==='mouse')setHovered(true);}}
+    onPointerLeave={()=>setHovered(false)}>
+    <button type="button" className={`floating-sync-status ${state}`}
       aria-label={`Sync status: ${status}`} aria-expanded={expanded} aria-controls={id}
-      onPointerEnter={event=>{if(event.pointerType==='mouse')setHovered(true);}}
-      onPointerLeave={()=>setHovered(false)}
       onFocus={event=>{if(event.currentTarget.matches(':focus-visible'))setFocused(true);}}
       onBlur={()=>{setFocused(false);setPinned(false);}}
       onClick={()=>setPinned(value=>!value)}
       onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();setPinned(false);setHovered(false);setFocused(false);}}}>
-      <span className="status-dot" aria-hidden="true"/>
       <span id={id} className="sync-status-description" aria-hidden={!expanded}>{status}</span>
+      <span className="sync-status-icon" aria-hidden="true">
+        <span className="status-dot"/>
+        <span className="sync-activity"/>
+        {feedback>0&&<span key={feedback} className="sync-save-feedback"/>}
+      </span>
     </button>
     <span className="screen-reader-only" role="status">{status}</span>
-  </>;
+  </div>;
 }

@@ -2,11 +2,19 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {blankEntry,decodeEntries} from '../src/domain.ts';
 import {newBoardItem,decodeBoardViews} from '../src/board-model.ts';
-import {renameThoughtGroup} from '../src/thought-groups.ts';
+import {renameThoughtGroup,newestThoughts} from '../src/thought-groups.ts';
 import {budgetGroups} from '../src/budget-order.ts';
 
 const thought=(name,group)=>({...blankEntry(),name,group});
 const state=(title,patch={})=>({...newBoardItem('group'),title,...patch});
+test('thoughts show newest creation first regardless of edits or storage order',()=>{
+  const older={...thought('Older',''),createdAt:'2026-10-01T12:00:00.000Z',updatedAt:'2026-10-21T12:00:00.000Z'};
+  const newer={...thought('Newer',''),createdAt:'2026-10-20T12:00:00.000Z'};
+  const newest={...thought('Newest',''),createdAt:'2026-10-20T13:00:00.000Z'};
+  const entries=[newer,older,newest];
+  assert.deepEqual(newestThoughts(entries).map(entry=>entry.name),['Newest','Newer','Older']);
+  assert.deepEqual(entries,[newer,older,newest]);
+});
 
 test('renaming updates all thoughts and the board group state, leaving other thoughts and cards intact',()=>{
   const card=newBoardItem('sticky');

@@ -1,11 +1,25 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {blankEntry,decodeEntries,todoOccurrences,validateEntry} from '../src/domain.ts';
-import {pinnedEntries,reorderPinned} from '../src/pinned-model.ts';
+import {pinnedEntries,prependNewPins,reorderPinned} from '../src/pinned-model.ts';
 import {initializeEntrySection,initialEntrySections,removeEntrySection} from '../src/entry-sections.ts';
 import {mergeEntries} from '../src/sync.ts';
 
 const thought=(name,patch={})=>({...blankEntry(),name,...patch});
+test('new pins and repins lead the saved order without disturbing existing pins',()=>{
+  const a=thought('A',{pin:true,pinOrder:1}),b=thought('B',{pin:true,pinOrder:0}),legacy=thought('Legacy',{pin:true}),old=thought('Old',{createdAt:'2020-01-01T00:00:00.000Z'});
+  const current=[a,b,legacy,old];
+  const pinned=prependNewPins(current,current.map(entry=>entry.id===old.id?{...entry,pin:true}:entry));
+  assert.deepEqual(pinnedEntries(decodeEntries(pinned)).map(entry=>entry.name),['Old','B','A','Legacy']);
+  assert.equal(old.pin,false);assert.equal(a.pinOrder,1);
+  assert.equal(prependNewPins(current,current),current);
+  const copy=thought('Copy',{pin:true,pinOrder:1});
+  const copied=prependNewPins(pinned,[...pinned,copy]);
+  assert.deepEqual(pinnedEntries(copied).map(entry=>entry.name),['Copy','Old','B','A','Legacy']);
+  const unpinned=copied.map(entry=>entry.id===old.id?{...entry,pin:false,pinOrder:-1}:entry);
+  const repinned=prependNewPins(unpinned,unpinned.map(entry=>entry.id===old.id?{...entry,pin:true}:entry));
+  assert.deepEqual(pinnedEntries(repinned).map(entry=>entry.name),['Old','Copy','B','A','Legacy']);
+});
 test('Pin migrates independently from existing board position locks and validates imports',()=>{
   const old=thought('Legacy',{boardItems:[{id:'card',kind:'sticky',x:0,y:0,width:320,height:360,z:1,color:'yellow',pinned:true}]});
   delete old.pin;delete old.pinOrder;

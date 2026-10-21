@@ -13,6 +13,9 @@ import InlineText from './InlineText';
 import {useCardMarquee} from './useCardMarquee';
 import LocationLinks from './LocationLinks';
 import {pinnedEntries,reorderPinned} from './pinned-model';
+import {nearestPinTarget} from './pinned-layout';
+import type {PinTarget} from './pinned-layout';
+import {usePinnedLayout} from './usePinnedLayout';
 
 function PinnedCard({entry,entries,connection,token,onEdit,onEntryChange,onTrack,onUnpin,grip}:{onUnpin:(entry:Entry)=>void;grip:ReactNode;entry:Entry;entries:Entry[];connection:Connection;token?:string;onEdit:(entry:Entry)=>void;onTrack:(entry:Entry)=>void;onEntryChange:(entry:Entry,patch:Partial<Entry>)=>void}) {
   const [photoId,setPhotoId]=useState('');
@@ -68,27 +71,43 @@ function UnpinDialog({entry,onConfirm,onClose}:{entry:Entry;onConfirm:()=>void;o
     return()=>element.close();
   },[]);
   return createPortal(<dialog ref={dialog} className="completion-dialog" aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event=>{event.preventDefault();onClose();}} onClick={event=>{if(event.target===event.currentTarget)onClose();}}>
-    <div className="modal-head"><h2 id={titleId}>Unpin thought?</h2><button type="button" className="icon-button" aria-label="Close dialog" onClick={onClose}>?</button></div>
+    <div className="modal-head"><h2 id={titleId}>Unpin thought?</h2><button type="button" className="icon-button" aria-label="Close dialog" onClick={onClose}>Close</button></div>
     <div className="completion-body"><div className="completion-task"><strong>{entry.name}</strong></div><p id={descriptionId} className="completion-description">Remove this thought from Pinned? It will remain in Thoughts and on the Board.</p></div>
     <div className="completion-actions"><button ref={cancel} type="button" className="secondary" onClick={onClose}>Cancel</button><button type="button" className="primary" onClick={onConfirm}>Unpin</button></div>
   </dialog>,document.body);
 }
 export default function Pinned({entries,visible,connection,token,onEdit,onEntryChange,onReorder,onTrack}:{entries:Entry[];visible:Entry[];connection:Connection;token?:string;onEdit:(entry:Entry)=>void;onTrack:(entry:Entry)=>void;onEntryChange:(entry:Entry,patch:Partial<Entry>)=>void;onReorder:(entries:Entry[])=>void}) {
-  const cards=pinnedEntries(visible),drag=useRef<string|null>(null);
+  const cards=pinnedEntries(visible),drag=useRef<{id:string;targets:PinTarget[];target:string|null}|null>(null);
+  const [dragId,setDragId]=useState<string|null>(null);
   const [target,setTarget]=useState<string|null>(null),[announcement,setAnnouncement]=useState('');
   const [unpinId,setUnpinId]=useState<string|null>(null);
   const unpinTarget=entries.find(entry=>entry.id===unpinId&&entry.pin);
+  const preview=dragId&&target?pinnedEntries(reorderPinned(visible,dragId,target)):cards;
+  const grid=usePinnedLayout(preview.map(entry=>entry.id));
+  function cancelDrag(){drag.current=null;setDragId(null);setTarget(null);}
   function move(source:string,target:string){onReorder(reorderPinned(entries,source,target));setAnnouncement('Pinned thoughts reordered.');}
   return <section aria-label="Pinned thoughts"><span className="screen-reader-only" role="status">{announcement}</span>
     {!cards.length&&<p>{entries.some(entry=>entry.pin)?'No pinned thoughts match your filters.':'Add the Pin attribute to a thought to see it here.'}</p>}
-    <div className="pinned-grid">{cards.map((entry,index)=><div key={entry.id} data-pinned-id={entry.id} className={`pinned-slot${target===entry.id?' is-drop-target':''}`}>
+    <div ref={grid} className="pinned-grid">{cards.map((entry,index)=><div key={entry.id} data-pinned-id={entry.id} className={`pinned-slot${dragId===entry.id?' is-dragging is-drop-target':''}`}>
 
       <PinnedCard entry={entry} entries={entries} connection={connection} token={token} onEdit={onEdit} onEntryChange={onEntryChange} onTrack={onTrack} onUnpin={entry=>setUnpinId(entry.id)} grip={<span tabIndex={0} role="group" aria-roledescription="drag grip" className="pinned-drag-handle" title="Drag to reorder, or use arrow keys" aria-label={`Reorder ${entry.name}. Use arrow keys to move.`}
-        onKeyDown={event=>{const offset=['ArrowLeft','ArrowUp'].includes(event.key)?-1:['ArrowRight','ArrowDown'].includes(event.key)?1:0;if(offset){event.preventDefault();const other=cards[index+offset];if(other)move(entry.id,other.id);}}}
-        onPointerDown={event=>{if(event.button!==0)return;event.preventDefault();event.currentTarget.focus();event.currentTarget.setPointerCapture(event.pointerId);drag.current=entry.id;}}
-        onPointerMove={event=>{if(drag.current){const slot=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('[data-pinned-id]');setTarget(slot?.dataset.pinnedId||null);}}}
-        onPointerUp={event=>{const slot=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('[data-pinned-id]');if(drag.current&&slot?.dataset.pinnedId)move(drag.current,slot.dataset.pinnedId);drag.current=null;setTarget(null);}}
-        onPointerCancel={()=>{drag.current=null;setTarget(null);}} onLostPointerCapture={()=>{drag.current=null;setTarget(null);}}><span aria-hidden="true">{'\u283F'}</span></span>}/>
+        onKeyDown={event=>{if(event.key==='Escape'&&drag.current){event.preventDefault();cancelDrag();return;}const offset=['ArrowLeft','ArrowUp'].includes(event.key)?-1:['ArrowRight','ArrowDown'].includes(event.key)?1:0;if(offset&&!drag.current){event.preventDefault();const other=cards[index+offset];if(other)move(entry.id,other.id);}}}
+        onPointerDown={event=>{
+          if(event.button!==0)return;
+          event.preventDefault();event.currentTarget.focus();event.currentTarget.setPointerCapture(event.pointerId);
+          const targets=Array.from(grid.current!.querySelectorAll<HTMLElement>('[data-pinned-id]')).map(slot=>{
+            const rect=slot.getBoundingClientRect();
+            return {id:slot.dataset.pinnedId!,left:rect.left+window.scrollX,top:rect.top+window.scrollY,width:rect.width,height:rect.height};
+          });
+          drag.current={id:entry.id,targets,target:entry.id};setDragId(entry.id);setTarget(entry.id);
+        }}
+        onPointerMove={event=>{
+          if(!drag.current)return;
+          const next=nearestPinTarget(drag.current.targets,event.clientX+window.scrollX,event.clientY+window.scrollY);
+          drag.current.target=next;setTarget(next);
+        }}
+        onPointerUp={()=>{const active=drag.current;if(active?.target&&active.target!==active.id)move(active.id,active.target);cancelDrag();}}
+        onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag}><span aria-hidden="true">{'\u283F'}</span></span>}/>
     </div>)}</div>
     {unpinTarget&&<UnpinDialog entry={unpinTarget} onClose={()=>setUnpinId(null)} onConfirm={()=>{
       onEntryChange(unpinTarget,{pin:false,pinOrder:-1});

@@ -726,11 +726,12 @@ footer {
 .budget-sortable-content { min-width: 0; flex: 1; }
 .budget-sortable-content > .entry-row { border-bottom: 0; }
 .budget-groups .is-dragging { opacity: 0.5; }
-.budget-groups :is(.drop-before,.drop-after)::after {
-  content: ''; position: absolute; left: 0; right: 0; height: 3px; background: var(--theme-accent); border-radius: 2px; z-index: 1; pointer-events: none;
+.budget-group, .budget-sortable-item { transition:transform 240ms cubic-bezier(.2,.8,.2,1); }
+.budget-groups .is-dragging { z-index:2; outline:2px dashed var(--theme-accent); outline-offset:2px; }
+.budget-groups.is-settling :is(.budget-group,.budget-sortable-item) { transition:none; }
+@media (prefers-reduced-motion:reduce) {
+  .budget-group, .budget-sortable-item { transition:none; }
 }
-.budget-groups .drop-before::after { top: -2px; }
-.budget-groups .drop-after::after { bottom: -2px; }
 .budget-progress {
   display: grid;
   gap: 5px;
@@ -1017,26 +1018,24 @@ dialog::backdrop {
 .entry-sweat {
   position: absolute;
   z-index: 2;
-  top: 8px;
-  right: 90px;
-  width: 40px;
-  height: 50px;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
   pointer-events: none;
   opacity: 0;
 }
 .entry-sweat > span {
   position: absolute;
-  top: 0;
+  top: 8%;
+  left: 8%;
   font-size: 19px;
   opacity: 0;
 }
-.entry-sweat > span:nth-child(2) {
-  left: 20px;
-}
-.entry-row:has(.delete-button:is(:hover, :focus-visible):not(:disabled))
-  > :is(.entry-content, .task-check, .entry-icon, .due, .amount) {
-  animation: entry-nervous 160ms linear infinite;
-}
+.entry-sweat > span:nth-child(2) { left:25%; top:45%; }
+.entry-sweat > span:nth-child(3) { left:43%; top:18%; }
+.entry-sweat > span:nth-child(4) { left:61%; top:55%; }
+.entry-sweat > span:nth-child(5) { left:78%; top:12%; }
+.entry-sweat > span:nth-child(6) { left:92%; top:40%; }
 .entry-row:has(.delete-button:is(:hover, :focus-visible):not(:disabled))
   .entry-sweat {
   opacity: 1;
@@ -1051,6 +1050,10 @@ dialog::backdrop {
   > span:nth-child(2) {
   animation-delay: 400ms;
 }
+.entry-row:has(.delete-button:is(:hover,:focus-visible):not(:disabled)) .entry-sweat > span:nth-child(3) { animation-delay:150ms; }
+.entry-row:has(.delete-button:is(:hover,:focus-visible):not(:disabled)) .entry-sweat > span:nth-child(4) { animation-delay:650ms; }
+.entry-row:has(.delete-button:is(:hover,:focus-visible):not(:disabled)) .entry-sweat > span:nth-child(5) { animation-delay:300ms; }
+.entry-row:has(.delete-button:is(:hover,:focus-visible):not(:disabled)) .entry-sweat > span:nth-child(6) { animation-delay:800ms; }
 .entry-row.celebrating {
   animation: completion-glow 500ms ease-out;
 }
@@ -1194,10 +1197,10 @@ dialog::backdrop {
     transform: translateX(0);
   }
   25% {
-    transform: translateX(-1.2px) rotate(-0.15deg);
+    transform: translateX(-1.2px);
   }
   75% {
-    transform: translateX(1.2px) rotate(0.15deg);
+    transform: translateX(1.2px);
   }
 }
 @keyframes nervous-sweat {
@@ -1426,40 +1429,30 @@ dialog::backdrop {
   display: inline-block;
   transform: rotate(12deg);
 }
-.entry-meta > .curious-cue {
-  margin-left: 3px;
-}
+.entry-hover-cues { display:inline-grid; align-items:center; min-width:45px; height:26px; margin-left:3px; pointer-events:none; }
+.entry-hover-cues > :is(.curious-cue,.task-anticipation,.delete-anticipation,.relief-cue) { grid-area:1 / 1; }
+.delete-anticipation { opacity:0; font-size:20px; white-space:nowrap; line-height:1; }
+.entry-row:has(.delete-button:not(:disabled):is(:hover,:focus-visible)) .delete-anticipation { opacity:1; animation:entry-nervous 220ms linear infinite; }
+.entry-row:has(.delete-button:not(:disabled):is(:hover,:focus-visible)) .entry-hover-cues > :is(.curious-cue,.task-anticipation) { visibility:hidden; }
 .editor .entry-field-section > summary .curious-cue {
   margin-left: 6px;
 }
 @media (hover: hover) and (pointer: fine) {
-  .entry-row:hover:not(.celebrating):not(
-      :has(.delete-button:is(:hover, :focus-visible))
-    )
-    .curious-cue,
+  .entry-row:not(.celebrating) .entry-content:not(:disabled):hover .curious-cue,
   .entry-field-section > summary:hover .curious-cue {
     opacity: 1;
     transform: translateY(0);
   }
-  .entry-row:hover:not(.celebrating):not(
-      :has(.delete-button:is(:hover, :focus-visible))
-    )
-    .curious-eyes,
+  .entry-row:not(.celebrating) .entry-content:not(:disabled):hover .curious-eyes,
   .entry-field-section > summary:hover .curious-eyes {
     animation: curious-peek 650ms ease-in-out;
   }
-  .entry-row:hover:not(.celebrating):not(
-      :has(.delete-button:is(:hover, :focus-visible))
-    )
-    .curious-question,
+  .entry-row:not(.celebrating) .entry-content:not(:disabled):hover .curious-question,
   .entry-field-section > summary:hover .curious-question {
     animation: curious-question 800ms ease-out;
   }
 }
-.entry-row:has(:is(.entry-content, .task-check):focus-visible):not(
-    .celebrating
-  ):not(:has(.delete-button:focus-visible))
-  .curious-cue,
+.entry-row:not(.celebrating) .entry-content:not(:disabled):focus-visible .curious-cue,
 .entry-field-section > summary:focus-visible .curious-cue {
   opacity: 1;
   transform: translateY(0);
@@ -1594,9 +1587,10 @@ dialog::backdrop {
 .attachment-drop-button:disabled { cursor:wait; }
 .attachment-drop-zone input[hidden] { display:none; }
 @media(max-width:650px) { .board-toolbar label { width:100%; } .board-zoom { margin-left:0; } .board-viewport { height:65vh; min-height:450px; } }
+.banner.success { border-color:#86ba97; }
 .banner.notification-toast {
   position: fixed;
-  right: 1rem;
+  right: max(1rem, env(safe-area-inset-right));
   bottom: calc(84px + env(safe-area-inset-bottom));
   z-index: 100;
   width: fit-content;
@@ -1604,7 +1598,10 @@ dialog::backdrop {
   margin: 0;
   box-shadow: 0 4px 18px #0002;
   overflow-wrap: anywhere;
+  flex-wrap: nowrap;
 }
+.notification-toast > span { flex:1; min-width:0; }
+.notification-toast .toast-close { color:inherit; }
 .floating-add-entry {
   position:fixed;
   right:max(16px, env(safe-area-inset-right));
@@ -1627,7 +1624,6 @@ dialog::backdrop {
 .board-workspace { height:100dvh; min-height:0; max-height:100dvh; overflow:hidden; }
 .board-workspace > main { display:flex; flex-direction:column; min-height:0; }
 .board-workspace .topbar, .board-workspace .local-banner, .board-workspace footer { display:none; }
-.board-workspace .notification-toast { top:8px; bottom:auto; }
 .board-workspace .main-content { display:flex; flex-direction:column; flex:1; min-height:0; width:100%; max-width:none; margin:0; padding:0; }
 .cork-board { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; }
 .board-toolbar { position:absolute; right: max(12px, env(safe-area-inset-right)); bottom:max(12px, env(safe-area-inset-bottom)); z-index:40; justify-content:flex-end; width:max-content; max-width:calc(100% - 24px); gap:8px; margin:0; padding:0; }
@@ -1686,16 +1682,20 @@ dialog::backdrop {
 .attribute-awake { display:none; }
 details[open] > summary .attribute-asleep { display:none; }
 details[open] > summary .attribute-awake { display:inline-block; }
-.task-anticipation, .relief-cue { position:absolute; pointer-events:none; opacity:0; font-size:20px; }
-.task-anticipation { left:34px; top:-10px; z-index:2; }
-.relief-cue { right:10px; top:0; z-index:3; }
-.is-relieved > .relief-cue { opacity:1; animation:relief-fade 1200ms ease-out both; }
-.entry-row:has(.task-check:is(:hover,:focus-visible)) .task-anticipation { opacity:1; animation:anticipation-bounce 500ms ease-in-out infinite alternate; }
-.entry-row:has(.task-check:is(:hover,:focus-visible):not(.checked)) .entry-content { animation:excited-shake 300ms linear infinite; }
-.entry-row:has(.task-check.checked:is(:hover,:focus-visible)) .entry-content { animation:entry-nervous 220ms linear infinite; }
+.task-anticipation, .relief-cue { pointer-events:none; opacity:0; font-size:20px; }
+.task-anticipation { display:inline-block; white-space:nowrap; line-height:1; }
+.relief-cue { display:inline-block; line-height:1; }
+.is-relieved:not(:has(.task-check:is(:hover,:focus-visible),.delete-button:is(:hover,:focus-visible))) .relief-cue { opacity:1; animation:relief-fade 1200ms ease-out both; }
+.is-relieved:not(:has(.task-check:is(:hover,:focus-visible),.delete-button:is(:hover,:focus-visible))) .entry-hover-cues > .curious-cue { visibility:hidden; }
+.entry-row:has(.task-check:not(:disabled):is(:hover,:focus-visible)) .task-anticipation { opacity:1; animation:anticipation-bounce 500ms ease-in-out infinite alternate; }
+.entry-row:has(.task-check:is(:hover,:focus-visible):not(.checked):not(:disabled)) .entry-content > :is(strong,.entry-meta) { animation:excited-shake 300ms linear infinite; }
+.entry-row:has(.task-check.checked:not(:disabled):is(:hover,:focus-visible)) .entry-content > :is(strong,.entry-meta),
+.entry-row:has(.delete-button:not(:disabled):is(:hover,:focus-visible)) .entry-content > :is(strong,.entry-meta),
+.entry-row:has(.task-check.checked:not(:disabled):is(:hover,:focus-visible)) > .due,
+.entry-row:has(.delete-button:not(:disabled):is(:hover,:focus-visible)) > .due { animation:entry-nervous 220ms linear infinite; }
 .entry-section:has(.remove-section:is(:hover,:focus-visible)) .curious-cue { display:none; }
 @keyframes anticipation-bounce { from{transform:translateY(0) rotate(-5deg)} to{transform:translateY(-5px) rotate(5deg)} }
-@keyframes excited-shake { 0%,100%{transform:translateY(0) rotate(0)} 30%{transform:translateY(-1px) rotate(-.3deg)} 70%{transform:translateY(-2px) rotate(.3deg)} }
+@keyframes excited-shake { 0%,100%{transform:translateY(0)} 25%{transform:translateY(-1.5px)} 75%{transform:translateY(1.5px)} }
 @keyframes relief-fade { 0%{opacity:0;transform:translateY(4px)} 20%,65%{opacity:1;transform:translateY(-3px)} 100%{opacity:0;transform:translateY(-8px)} }
 @media(prefers-reduced-motion:reduce) {
   .task-anticipation,.relief-cue { display:none; }
@@ -1704,8 +1704,8 @@ details[open] > summary .attribute-awake { display:inline-block; }
 .check-label input[type=checkbox] { width:16px; height:16px; }
 .toast-close { position:relative; display:grid; place-items:center; width:44px; height:44px; padding:0; flex-shrink:0; }
 .toast-close svg { position:absolute; inset:2px; width:40px; height:40px; transform:rotate(-90deg); pointer-events:none; }
-.toast-ring-track { fill:none; stroke:#753b5d2b; stroke-width:2; }
-.toast-ring { fill:none; stroke:#74365a; stroke-width:2; }
+.toast-ring-track { fill:none; stroke:currentColor; stroke-opacity:.2; stroke-width:2; }
+.toast-ring { fill:none; stroke:currentColor; stroke-width:2; }
 .toast-close-cross { fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; }
 .board-card.is-dimmed { opacity:.18; }
 .board-search { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:30; width:min(320px,calc(100% - 24px)); padding:7px 12px; border:1px solid var(--theme-border,#bca5b5); border-radius:24px; background:var(--theme-surface,#fff); box-shadow:0 2px 8px #0002; }
@@ -1713,9 +1713,9 @@ details[open] > summary .attribute-awake { display:inline-block; }
 .board-group { position:absolute; border:4px dotted var(--theme-border,#bca5b5); border-radius:12px; background:transparent; pointer-events:none; }
 .board-group.is-collapsed { border-color:transparent; background:transparent; }
 .board-group-controls { position:absolute; top:-22px; left:12px; display:flex; gap:4px; align-items:center; max-width:calc(100% - 24px); padding:3px 6px; background:var(--theme-surface,#fff); border:1px solid var(--theme-border,#bca5b5); border-radius:8px; box-shadow:0 2px 6px #0002; pointer-events:auto; }
-.entry-row:has(.task-check:is(:hover,:focus-visible)) .curious-cue { opacity:0; }
+.entry-row:has(.task-check:is(:hover,:focus-visible)) .entry-hover-cues > .curious-cue { visibility:hidden; }
 .entry-field-section > summary:is(:hover,:focus-visible) :is(.attribute-asleep,.attribute-awake) { animation:curious-peek 650ms ease-in-out; }
-@media(prefers-reduced-motion:reduce) { .attribute-asleep, .attribute-awake { display:none !important; } }
+@media(prefers-reduced-motion:reduce) { .attribute-asleep, .attribute-awake { animation:none !important; } }
 .board-group-controls button:not(.board-group-drag) { display:grid; place-items:center; flex-shrink:0; min-width:36px; min-height:36px; padding:3px; border:1px solid #65564026; border-radius:8px; background:#ffffff26; color:#403626; box-shadow:none; }
 .board-group-controls button:not(.board-group-drag):hover:not(:disabled) { background:#ffffff50; border-color:#65564040; }
 .board-group-controls button:not(.board-group-drag):active:not(:disabled), .board-group-controls button[aria-pressed=true] { background:#65564014; border-color:#65564050; box-shadow:none; }
@@ -1950,7 +1950,7 @@ details[open] > summary .attribute-awake { display:inline-block; }
 .completion-tracking p { margin-top:4px; color:#766171; font-size:15px; line-height:1.5; }
 .completion-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 20px; border-top:1px solid #e8e2e5; background:#faf8f9; }
 .completion-actions > .primary { margin-left:auto; min-width:120px; border-radius:8px; }
-.completion-delete { min-height:44px; padding:8px 12px; border:1px solid #dfc5be; border-radius:8px; color:#963f30; background:#fff; font-weight:600; }
+.completion-delete { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:8px 12px; border:1px solid #dfc5be; border-radius:8px; color:#963f30; background:#fff; font-weight:600; }
 .completion-delete:hover { background:#fceeea; border-color:#b87869; }
 @media (max-width:360px) {
   .completion-actions { flex-direction:column-reverse; align-items:stretch; }
@@ -1976,8 +1976,13 @@ details[open] > summary .attribute-awake { display:inline-block; }
 
 .location-links { display:flex; flex-wrap:wrap; gap:8px; margin:6px 0; }
 .location-links a { display:inline-flex; align-items:center; min-height:44px; padding:6px 10px; border:1px solid currentColor; border-radius:6px; font-size:15px; color:inherit; }
-.pinned-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr)); gap:18px; align-items:start; }
-.pinned-slot { min-width:0; border-radius:8px; }
+.pinned-grid { position:relative; }
+.pinned-slot { position:absolute; top:0; left:0; min-width:0; border-radius:8px; }
+.pinned-grid[data-ready=true] .pinned-slot { transition:transform 240ms cubic-bezier(.2,.8,.2,1); }
+.pinned-slot.is-dragging { z-index:2; opacity:.8; pointer-events:none; }
+@media (prefers-reduced-motion:reduce) {
+  .pinned-grid[data-ready=true] .pinned-slot { transition:none; }
+}
 .pinned-slot.is-drop-target { outline:3px solid var(--theme-accent,#88496f); outline-offset:4px; }
 .pinned-card header .pinned-drag-handle { display:grid; place-items:center; flex:0 0 32px; width:32px; min-height:44px; padding:2px; border:0; background:transparent; color:var(--paper-muted,#655e48); box-shadow:none; user-select:none; touch-action:none; cursor:grab; font-size:24px; }
 .pinned-card header .pinned-drag-handle:is(:hover,:active) { border:0; background:transparent; color:var(--paper-muted,#655e48); box-shadow:none; }

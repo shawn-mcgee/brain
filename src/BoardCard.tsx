@@ -65,7 +65,7 @@ function BoardCardContent({item,entry,entries,connection,token,onUpdate,onEntryC
         {colorOpen&&<div className="board-color-options" role="group" aria-label="Card color">{boardColors.map(value=><button key={value} type="button" className={`board-color-swatch board-${value}`} title={value} aria-label={value} aria-pressed={color===value} onClick={()=>{if(entry)onEntryChange(entry,{color:value});else onUpdate({color:value,customColor:true});setColorOpen(false)}}><span/>{color===value&&<b aria-hidden="true">✓</b>}</button>)}</div>}
       </div>
       <button type="button" className="board-pin" aria-label={item.pinned?'Unlock position':'Lock position'} aria-pressed={!!item.pinned} title={item.pinned?'Unlock position':'Lock position'} onClick={()=>onUpdate({pinned:!item.pinned})}><span aria-hidden="true">{item.pinned?"\u{1F512}":"\u{1F513}"}</span></button>
-      <button type="button" className="board-archive" aria-label={`Remove ${title} from board`} title="Remove from board; keep thought" onClick={()=>onUpdate({archived:true})}><span aria-hidden="true">{'\u2716\uFE0F'}</span></button>
+      <button type="button" className="board-archive" aria-label={`Remove ${title} from board`} title="Remove from board; keep thought" onClick={()=>onUpdate({archived:true})}><span aria-hidden="true">{'\u{1F4E5}'}</span></button>
       </div>}
       </div>
     </div>

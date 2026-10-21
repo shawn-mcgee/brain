@@ -35,11 +35,13 @@ import Attachments from './Attachments';
 import {signedAmount,moneyAmountFields,trackingDraft} from './money-model';
 import BudgetList from './BudgetList';
 import {reorderBudgets} from './budget-order';
-import {renameThoughtGroup} from './thought-groups';
+import {renameThoughtGroup,newestThoughts} from './thought-groups';
+import {prependNewPins} from './pinned-model';
 import Checklist from './Checklist';
 import {setTaskDone} from './checklist-model';
 import {actualEntryChanges,sameValue} from './entry-changes';
 import Pinned from './Pinned';
+import ThoughtPinButton from './ThoughtPinButton';
 import LocationLinks from './LocationLinks';
 import Board from './Board';
 import type { BoardItem } from './board-model';
@@ -54,10 +56,10 @@ import type { Celebration } from "./TaskCelebration";
 import SignInCharacter from "./SignInCharacter";
 import Curiosity from "./Curiosity";
 import AttributeInput from './AttributeInput';
-import Toast from './Toast';
 import PersonalitySurface from './PersonalitySurface';
 import ResponsiveSidebar from './ResponsiveSidebar';
 import SyncStatusButton from './SyncStatusButton';
+import {syncStatus} from './sync-status';
 import ThemeToggle from './ThemeToggle';
 import {boardColors} from './board-model';
 import {entrySearchText,defaultSections,fancyName} from './entry-attributes';
@@ -626,6 +628,8 @@ function App() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [syncFailures, setSyncFailures] = useState(0);
+  const [saveFailed,setSaveFailed]=useState(false);
+  const [saveFeedback,setSaveFeedback]=useState(0);
   const [syncing, setSyncing] = useState(false);
   const [signInStage, setSignInStage] = useState<"google" | "sheet" | null>(
     null,
@@ -710,10 +714,13 @@ function App() {
     }
     try {
       saveStore(next);
+      setSaveFailed(false);
+      if(next.dirty&&(next.entries!==stateRef.current.entries||next.boardViews!==stateRef.current.boardViews))setSaveFeedback(value=>value+1);
       stateRef.current = next;
       setStore(next);
       return true;
     } catch {
+      setSaveFailed(true);
       setError(
         "Browser storage is full or unavailable. Your change was not saved. Export a backup before continuing.",
       );
@@ -722,6 +729,7 @@ function App() {
   }
   function change(entries: Entry[], origin:HTMLElement|null=document.activeElement instanceof HTMLElement?document.activeElement:null) {
     const current=stateRef.current;
+    entries=prependNewPins(current.entries,entries);
     entries=actualEntryChanges(current.entries,entries);
     if(entries===current.entries)return true;
     const saved=commit({ ...current, entries, dirty: true });
@@ -865,16 +873,10 @@ function App() {
       ) {
         setSyncFailures(0);
         setError("");
+        if(current.dirty||!automatic)setSaveFeedback(value=>value+1);
         if (data.conflicts + rebased.conflicts)
           setNotice(
             "Changes merged automatically. Concurrent versions were preserved as separate thoughts; dependency cycles were removed if needed.",
-          );
-        else if (!automatic) setNotice("Everything is up to date.");
-        else if (current.dirty)
-          setNotice(
-            changedDuringSync
-              ? "Changes saved. Syncing newer edits…"
-              : "Changes saved to Google Sheets.",
           );
       } else setSyncFailures((n) => n + 1);
     } catch (e) {
@@ -920,9 +922,7 @@ function App() {
       setNotice(
         merged.conflicts
           ? "Concurrent versions were preserved as separate thoughts."
-          : session
-            ? "Thought saved. Syncing automatically…"
-            : "Thought saved on this device.",
+          : "",
       );
       setError("");
     }
@@ -1131,7 +1131,12 @@ function App() {
               !e.who.length &&
               !e.budgetType &&
               !e.transactionType && <span>Note</span>}
-            <Curiosity />
+            <span className="entry-hover-cues">
+              <Curiosity />
+              {e.task&&<span className="task-anticipation" aria-hidden="true">{done?"\u{1F440} \u{2049}\uFE0F":"\u{1F440} \u{203C}\uFE0F"}</span>}
+              <span className="delete-anticipation" aria-hidden="true">{'\u{1F631}\u{2049}\uFE0F'}</span>
+              <span className="relief-cue" aria-hidden="true">{'\u{1F62E}\u200D\u{1F4A8}'}</span>
+            </span>
           </span>
         </button>
         {e.list.length>0&&<Checklist entry={e} entries={store.entries} date={date} disabled={busy} onChange={updated=>change(store.entries.map(item=>item.id===updated.id?updated:item))}/>}
@@ -1162,14 +1167,19 @@ function App() {
           </span>
         )}
 
-        {e.task&&<span className="task-anticipation" aria-hidden="true">{done?"\u{1F440} \u{2049}\uFE0F":"\u{1F440} \u{203C}\uFE0F"}</span>}
         <span className="entry-sweat" aria-hidden="true">
-          <span>💧</span>
-          <span>💧</span>
+          {Array.from({length:6},(_,index)=><span key={index}>{'\u{1F4A7}'}</span>)}
         </span>
         <div className="thought-controls" role="group" aria-label={`Actions for ${e.name}`}>
           <LocationLinks where={e.where}/>
         {e.budgetType&&<button type="button" className="secondary budget-track-button" disabled={busy} aria-label={`Track ${e.budgetType}`} title={`Track ${e.budgetType}`} onClick={()=>trackBudget(e)}><span aria-hidden="true">{'\u{1F4B8}'}</span></button>}
+        <ThoughtPinButton name={e.name} pinned={e.pin} disabled={busy} onToggle={()=>{
+          const current=stateRef.current.entries.find(entry=>entry.id===e.id);
+          if(!current)return false;
+          const pin=!current.pin;
+          const saved=change(stateRef.current.entries.map(entry=>entry.id===e.id?{...entry,pin,pinOrder:-1,updatedAt:new Date().toISOString()}:entry));
+          return saved;
+        }}/>
         <button
           className="delete-button"
           aria-label={`Delete ${e.name}`}
@@ -1192,10 +1202,11 @@ function App() {
     );
   }
 
+  const currentSyncStatus=syncStatus({signedIn:!!session,localMode,syncing,signInStage,dirty:store.dirty,failures:syncFailures,storageProblem:!!storageError||saveFailed});
   return (
     <div className={`app-shell${view === "Board" && unlocked ? " board-workspace" : ""}`}>
       <div className="app-utilities" role="group" aria-label="App status and appearance">
-        <SyncStatusButton state={session?busy||syncing?'is-syncing':store.dirty?syncFailures>0?'is-error':'is-pending':'is-connected':'is-offline'} status={session?busy||syncing?'Syncing…':store.dirty?syncFailures>0?'Sync failed · retrying':'Waiting to sync':'Connected to Google':localMode?'Local workspace':'Not signed in'}/>
+        <SyncStatusButton feedback={saveFeedback} {...currentSyncStatus}/>
         <ThemeToggle />
       </div>
       <ResponsiveSidebar mobileHeader={<>
@@ -1271,6 +1282,7 @@ function App() {
 
         </header>
         <div className="main-content">
+          {notice&&<div className="banner" role="status">{notice}<button type="button" aria-label="Dismiss notice" onClick={()=>setNotice('')}>×</button></div>}
           {error && (
             <div className="banner error" role="alert">
               {error}
@@ -1279,7 +1291,6 @@ function App() {
               </button>
             </div>
           )}
-          {notice&&<Toast key={notice} message={notice} onClose={()=>setNotice('')}/>}
           {!unlocked ? (
             <section className="welcome">
               <SignInCharacter />
@@ -1665,7 +1676,7 @@ function App() {
                 </>
               )}
               {view === "Pinned"&&<Pinned onTrack={trackBudget} entries={store.entries} visible={filtered} connection={store.connection} token={session?.token} onEdit={setEditor} onEntryChange={(entry,patch)=>change(stateRef.current.entries.map(current=>current.id===entry.id?{...current,...patch,updatedAt:new Date().toISOString()}:current))} onReorder={entries=>change(entries)}/>}
-              {view === "Thoughts"&&<section className="entry-list" aria-label="All thoughts">{filtered.length?filtered.map(entry=>row(entry)):empty('No matching thoughts','Search your thoughts or add a thought.')}</section>}
+              {view === "Thoughts"&&<section className="entry-list" aria-label="All thoughts">{filtered.length?newestThoughts(filtered).map(entry=>row(entry)):empty('No matching thoughts','Search your thoughts or add a thought.')}</section>}
               {view === "Budget" && (
                 <>
                   <div className="money-summary">
@@ -1771,7 +1782,7 @@ function App() {
           <button type="button" className="completion-delete" aria-label="Delete thought" title="Delete thought" onClick={() => {
             removeConfirmed(deleteTarget);
             setDeleteTarget(null);
-          }}><span aria-hidden="true">{'\u{1F5D1}\uFE0F'}</span></button>
+          }}><span aria-hidden="true">{'\u{1F5D1}\uFE0F'}</span> Delete</button>
           <button type="button" autoFocus className="primary" onClick={() => setDeleteTarget(null)}>Cancel</button>
         </div>
       </Modal>}
@@ -1795,12 +1806,12 @@ function App() {
           {!completedTarget.repeat && <button type="button" className="completion-delete" aria-label="Delete task" title="Delete task" onClick={() => {
             removeConfirmed(completedTarget);
             setCompletedTarget(null);
-          }}><span aria-hidden="true">{'\u{1F5D1}\uFE0F'}</span></button>}
-          <button type="button" autoFocus className={completedTarget.budgetType ? 'secondary' : 'primary'} onClick={() => setCompletedTarget(null)}>{completedTarget.budgetType ? 'Ignore transaction' : 'Keep task'}</button>
+          }}><span aria-hidden="true">{'\u{1F5D1}\uFE0F'}</span> Delete</button>}
+          <button type="button" autoFocus className={completedTarget.budgetType ? 'secondary' : 'primary'} onClick={() => setCompletedTarget(null)}>{completedTarget.budgetType ? 'Ignore transaction' : 'Keep'}</button>
           {completedTarget.budgetType && <button type="button" aria-label={`Track ${completedTarget.budgetType}`} title={`Track ${completedTarget.budgetType}`} className={`primary budget-track-button${completedTarget.color?` item-colored board-${completedTarget.color}`:''}`} onClick={() => {
             trackBudget(completedTarget, true);
             setCompletedTarget(null);
-          }}><span aria-hidden="true">{'\u{1F4B8}'}</span></button>}
+          }}><span aria-hidden="true">{'\u{1F4B8}'}</span> Track {completedTarget.budgetType}</button>}
         </div>
       </Modal>}
       {settings && (

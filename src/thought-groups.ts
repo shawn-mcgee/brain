@@ -2,6 +2,10 @@ import type {Entry} from './domain.ts';
 import type {BoardItem} from './board-model.ts';
 import {budgetGroups} from './budget-order.ts';
 
+export function newestThoughts(entries:Entry[]):Entry[] {
+  return [...entries].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id));
+}
+
 export function renameThoughtGroup(entries:Entry[],boardViews:BoardItem[],source:string,name:string) {
   const target=name.trim();
   if(!source||target===source||!entries.some(entry=>entry.group===source))return {entries,boardViews};

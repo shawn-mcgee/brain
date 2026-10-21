@@ -33,7 +33,6 @@
 }
 .theme-toggle:hover { background:var(--theme-hover); }
 .app-shell .topbar { padding-right:128px; }
-.board-workspace .notification-toast { top:64px; }
 @media(max-width:800px) {
   .app-shell .mobile-navigation { padding-right:120px; }
   .theme-toggle { top:6px; }
@@ -82,7 +81,8 @@
 :root[data-theme=dark] .local-banner button { background:var(--theme-raised); color:#f0d88f; border-color:#8d7841; }
 :root[data-theme=dark] :is(.error,.deletion-check) { background:#432c29; color:#ffb7a9; }
 :root[data-theme=dark] :is(.due.overdue,.amount.negative) { color:#ffb7a9; }
-:root[data-theme=dark] :is(.success,.replacement-notice) { background:#33243e; color:#d7c0e8; border-color:#675474; }
+:root[data-theme=dark] .replacement-notice { background:#33243e; color:#d7c0e8; border-color:#675474; }
+:root[data-theme=dark] .success { background:#173b2a; color:#c3f2d4; border-color:#4a9569; }
 :root[data-theme=dark] .amount.positive { color:#c6a3df; }
 :root[data-theme=dark] :is(.money-summary,.quiet-empty,.weekdays) { background:var(--theme-raised); color:var(--theme-text); border-color:var(--theme-border); }
 :root[data-theme=dark] .calendar-day { border-color:var(--theme-border); }
@@ -215,28 +215,38 @@
 
 .app-utilities { position:fixed; top:8px; right:max(12px,env(safe-area-inset-right)); z-index:60; display:flex; align-items:flex-start; gap:8px; }
 .app-utilities .theme-toggle { position:static; flex:0 0 44px; }
+.sync-status-control { position:relative; flex:0 1 auto; min-width:44px; max-width:calc(100vw - 80px); }
 .floating-sync-status {
-  display:flex; align-items:center; justify-content:center; gap:0; height:44px; min-width:44px;
-  padding:0 15px; border:1px solid var(--theme-border); border-radius:999px;
+  display:flex; align-items:center; justify-content:center; gap:0; width:auto; max-width:100%; height:44px; min-height:44px; max-height:44px; min-width:44px;
+  padding:0 14px; border:1px solid var(--theme-border); border-radius:999px;
   background:var(--theme-surface); color:var(--theme-text); box-shadow:0 2px 8px #0002;
 }
-.floating-sync-status .status-dot { flex:0 0 12px; width:12px; height:12px; margin:0; background:#458264; }
+.sync-status-icon { position:relative; display:grid; place-items:center; flex:0 0 14px; width:14px; height:14px; }
+.floating-sync-status .status-dot { width:12px; height:12px; margin:0; background:#458264; }
+.sync-activity, .sync-save-feedback { position:absolute; inset:-6px; border-radius:50%; pointer-events:none; }
+.sync-activity { opacity:0; border:2px solid transparent; border-top-color:var(--theme-accent); border-right-color:var(--theme-accent); }
+.is-syncing .sync-activity { opacity:1; animation:sync-status-spin 1s linear infinite; }
+.sync-save-feedback { border:2px solid #458264; animation:sync-save-ripple 1.2s ease-out both; }
+.is-pending .status-dot { animation:sync-status-pulse 1.8s ease-in-out infinite; }
 .floating-sync-status.is-pending .status-dot { background:#b78424; }
 .floating-sync-status.is-syncing .status-dot { background:#7c65b2; animation:sync-status-pulse 1.2s ease-in-out infinite; }
 .floating-sync-status.is-error .status-dot { background:#c45e51; }
 .floating-sync-status.is-offline .status-dot { background:#8b7e90; }
-.sync-status-description { max-width:0; margin-left:0; opacity:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:14px; font-weight:500; transition:max-width .22s ease,margin-left .22s ease,opacity .15s ease; }
-.floating-sync-status.is-expanded .sync-status-description { max-width:min(270px,calc(100vw - 126px)); margin-left:10px; opacity:1; }
+.sync-status-description { display:block; min-width:0; max-width:0; margin-right:0; opacity:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:14px; font-weight:500; text-align:left; transition:max-width .22s ease,margin-right .22s ease,opacity .15s ease; }
+.sync-status-control.is-expanded .sync-status-description { max-width:min(320px,calc(100vw - 136px)); margin-right:10px; opacity:1; }
 :root[data-theme=dark] .floating-sync-status.is-connected .status-dot { background:#89c7a4; }
 :root[data-theme=dark] .floating-sync-status.is-pending .status-dot { background:#e1b963; }
 :root[data-theme=dark] .floating-sync-status.is-syncing .status-dot { background:#c4a6ef; }
 :root[data-theme=dark] .floating-sync-status.is-error .status-dot { background:#f5988a; }
 :root[data-theme=dark] .floating-sync-status.is-offline .status-dot { background:#ac9fb8; }
 @keyframes sync-status-pulse { 50% { opacity:.4; } }
+@keyframes sync-status-spin { to { transform:rotate(360deg); } }
+@keyframes sync-save-ripple { 0% { opacity:0; transform:scale(.7); } 20% { opacity:.85; } 100% { opacity:0; transform:scale(1.55); } }
 @media(max-width:800px) { .app-utilities { top:6px; } }
 @media(prefers-reduced-motion:reduce) {
   .sync-status-description { transition:none; }
-  .floating-sync-status.is-syncing .status-dot { animation:none; }
+  .floating-sync-status :is(.status-dot,.sync-activity) { animation:none; }
+  .sync-save-feedback { display:none; }
 }
 
 /* Colored items retain their light paper and dark ink during interaction. */
@@ -432,8 +442,7 @@
 /* Thought action buttons share one size and shape in lists and card headers. */
 :root[data-theme] .thought-controls > button,
 :root[data-theme] .thought-controls > .board-color-picker > button,
-:root[data-theme] .thought-controls .location-links a,
-:root[data-theme] .completion-actions .completion-delete {
+:root[data-theme] .thought-controls .location-links a {
   display:inline-flex;
   align-items:center;
   justify-content:center;
@@ -471,6 +480,26 @@
   background:#f8e9e7;
   border-color:#dbb6b1;
   color:#8b3e38;
+}
+:root[data-theme] .thought-controls > .thought-pin-button[aria-pressed=true] {
+  background:var(--theme-hover);
+  border-color:var(--theme-accent);
+  box-shadow:inset 0 0 0 1px var(--theme-accent);
+}
+:root[data-theme] .thought-controls > .thought-pin-button {
+  position:relative;
+}
+.thought-pin-icon { display:inline-block; font-size:20px; }
+.thought-pin-button[aria-pressed=false] .thought-pin-icon { transform:rotate(-30deg); opacity:.65; }
+.thought-pin-button[data-feedback=pinned] .thought-pin-icon { animation:thought-pin-stick 650ms ease-out both; }
+.thought-pin-button[data-feedback=unpinned] .thought-pin-icon { animation:thought-pin-lift 650ms ease-out both; }
+.thought-pin-button[data-feedback=pinned]::after { content:'✨'; position:absolute; top:-9px; left:12px; pointer-events:none; animation:thought-pin-sparkle 800ms ease-out both; }
+@keyframes thought-pin-stick { 0%{transform:translateY(-9px) rotate(-25deg) scale(1.25)} 45%{transform:translateY(2px) rotate(8deg) scale(.9)} 70%{transform:translateY(-2px) rotate(-4deg) scale(1.1)} 100%{transform:none} }
+@keyframes thought-pin-lift { 0%{transform:none;opacity:1} 45%{transform:translateY(-9px) rotate(-35deg);opacity:.4} 100%{transform:rotate(-30deg);opacity:.65} }
+@keyframes thought-pin-sparkle { 0%{opacity:0;transform:translateY(5px) scale(.5)} 35%{opacity:1;transform:translateY(-2px) scale(1.2)} 100%{opacity:0;transform:translateY(-12px) scale(.7)} }
+@media (prefers-reduced-motion:reduce) {
+  .thought-pin-button .thought-pin-icon { animation:none !important; }
+  .thought-pin-button::after { display:none; }
 }
 :root[data-theme] .thought-controls .delete-button:hover:not(:disabled),
 :root[data-theme] .completion-actions .completion-delete:hover:not(:disabled) {
