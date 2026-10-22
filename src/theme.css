@@ -221,7 +221,11 @@
   padding:0 14px; border:1px solid var(--theme-border); border-radius:999px;
   background:var(--theme-surface); color:var(--theme-text); box-shadow:0 2px 8px #0002;
 }
+.sync-status-control.is-expanded .floating-sync-status { padding-left:3px; }
 .sync-status-icon { position:relative; display:grid; place-items:center; flex:0 0 14px; width:14px; height:14px; }
+.sync-status-toggle { display:flex; align-items:center; min-width:0; height:42px; padding:0; border:0; border-radius:999px; background:transparent; color:inherit; box-shadow:none; }
+.sync-status-refresh { display:grid; place-items:center; flex:0 0 36px; width:36px; height:36px; min-height:36px; margin-right:8px; padding:0; border:1px solid var(--theme-border); border-radius:50%; background:var(--theme-raised); color:inherit; box-shadow:none; }
+.sync-status-refresh:hover:not(:disabled) { background:var(--theme-raised); }
 .floating-sync-status .status-dot { width:12px; height:12px; margin:0; background:#458264; }
 .sync-activity, .sync-save-feedback { position:absolute; inset:-6px; border-radius:50%; pointer-events:none; }
 .sync-activity { opacity:0; border:2px solid transparent; border-top-color:var(--theme-accent); border-right-color:var(--theme-accent); }
@@ -232,8 +236,11 @@
 .floating-sync-status.is-syncing .status-dot { background:#7c65b2; animation:sync-status-pulse 1.2s ease-in-out infinite; }
 .floating-sync-status.is-error .status-dot { background:#c45e51; }
 .floating-sync-status.is-offline .status-dot { background:#8b7e90; }
-.sync-status-description { display:block; min-width:0; max-width:0; margin-right:0; opacity:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:14px; font-weight:500; text-align:left; transition:max-width .22s ease,margin-right .22s ease,opacity .15s ease; }
-.sync-status-control.is-expanded .sync-status-description { max-width:min(320px,calc(100vw - 136px)); margin-right:10px; opacity:1; }
+.sync-status-description { display:block; flex:0 0 auto; width:0; min-width:0; margin-right:0; opacity:0; overflow:hidden; white-space:nowrap; font-size:14px; font-weight:500; text-align:left; transition:width .22s ease,margin-right .22s ease,opacity .15s ease; }
+.sync-status-control.is-expanded .sync-status-description { width:min(128px,calc(100vw - 180px)); margin-right:10px; opacity:1; }
+.sync-status-text { display:block; width:max-content; }
+.sync-status-text.is-overflowing { animation:sync-status-marquee var(--sync-marquee-duration) linear infinite alternate; }
+@keyframes sync-status-marquee { 0%,15% { transform:translateX(0); } 85%,100% { transform:translateX(var(--sync-marquee-offset)); } }
 :root[data-theme=dark] .floating-sync-status.is-connected .status-dot { background:#89c7a4; }
 :root[data-theme=dark] .floating-sync-status.is-pending .status-dot { background:#e1b963; }
 :root[data-theme=dark] .floating-sync-status.is-syncing .status-dot { background:#c4a6ef; }
@@ -245,6 +252,8 @@
 @media(max-width:800px) { .app-utilities { top:6px; } }
 @media(prefers-reduced-motion:reduce) {
   .sync-status-description { transition:none; }
+  .sync-status-text.is-overflowing { animation:none; }
+  .sync-status-description:has(.is-overflowing) { overflow-x:auto; }
   .floating-sync-status :is(.status-dot,.sync-activity) { animation:none; }
   .sync-save-feedback { display:none; }
 }

@@ -1206,7 +1206,7 @@ function App() {
   return (
     <div className={`app-shell${view === "Board" && unlocked ? " board-workspace" : ""}`}>
       <div className="app-utilities" role="group" aria-label="App status and appearance">
-        <SyncStatusButton feedback={saveFeedback} {...currentSyncStatus}/>
+        <SyncStatusButton feedback={saveFeedback} {...currentSyncStatus} onRefresh={()=>void sync()} refreshDisabled={!session || busy || syncing}/>
         <ThemeToggle />
       </div>
       <ResponsiveSidebar mobileHeader={<>
