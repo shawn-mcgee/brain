@@ -21,9 +21,9 @@ function CopyLink({link,index}:{link:string;index:number}) {
   </>;
 }
 
-function LinkItem({link,index,row}:{link:string;index:number;row:(toggle:ReactNode,copy:ReactNode)=>ReactNode}) {
+function LinkItem({link,index,row,defaultExpanded=false}:{link:string;index:number;row:(toggle:ReactNode,copy:ReactNode)=>ReactNode;defaultExpanded?:boolean}) {
   const embed=youtubeEmbedUrl(link);
-  const [shownEmbed,setShownEmbed]=useState<string|null>(null);
+  const [shownEmbed,setShownEmbed]=useState<string|null>(()=>defaultExpanded?embed:null);
   const expanded=!!embed&&shownEmbed===embed;
   const contentId=useId();
   const toggle=embed?<button type="button" className="secondary link-embed-toggle" aria-expanded={expanded} aria-controls={contentId} aria-label={`${expanded?'Hide':'Show'} video ${index+1}`} title={expanded?'Hide video':'Show video'} onClick={()=>setShownEmbed(expanded?null:embed)}>
@@ -37,13 +37,13 @@ function LinkItem({link,index,row}:{link:string;index:number;row:(toggle:ReactNo
   </div>;
 }
 
-export default function ThoughtLinks({links,onChange,disabled=false}:{links:string[];onChange?:(links:string[])=>void;disabled?:boolean}) {
+export default function ThoughtLinks({links,onChange,disabled=false,defaultExpanded=false}:{links:string[];onChange?:(links:string[])=>void;disabled?:boolean;defaultExpanded?:boolean}) {
   const valid=links.filter(isHttpLink);
   if(!valid.length)return null;
   const items=valid.map((link,index)=>({link,id:`${link}:${valid.slice(0,index).filter(value=>value===link).length}`}));
   return <div className="thought-links" aria-label="Thought links">
     <ReorderableItems items={items} itemKey={item=>item.id} label={(_item,index)=>`link ${index+1}`} disabled={disabled} onChange={onChange?items=>onChange(items.map(item=>item.link)):undefined}>{(item,index,grip)=>
-      <LinkItem link={item.link} index={index} row={(toggle,copy)=><>
+      <LinkItem link={item.link} index={index} defaultExpanded={defaultExpanded} row={(toggle,copy)=><>
           {grip}{copy}{toggle}<a className="thought-link-open" href={item.link} target="_blank" rel="noopener noreferrer" title={`${item.link} (opens in a new tab)`}>
             <span className="thought-link-copy"><span>{item.link}</span><small>Opens in a new tab</small></span>
             <span className="thought-link-launch curious-cue" aria-hidden="true"><span className="curious-eyes">{'\u2197\uFE0F'}</span><span className="curious-question">{'\u2754'}</span></span>

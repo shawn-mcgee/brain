@@ -61,7 +61,7 @@ function PinnedCard({entry,entries,connection,token,onEdit,onEntryChange,onTrack
     {taskError&&<p className="error" role="alert">{taskError}</p>}
     {!entry.list.length&&!listOpen&&<button type="button" className="board-add-list" onClick={()=>setListOpen(true)}>＋ List</button>}
     {(entry.list.length>0||listOpen)&&<Checklist entry={entry} entries={entries} editable inline onChange={updated=>onEntryChange(entry,updated)}/>}
-    <ThoughtLinks links={entry.links} onChange={links=>onEntryChange(entry,{links})}/>
+    <ThoughtLinks links={entry.links} defaultExpanded onChange={links=>onEntryChange(entry,{links})}/>
     <footer className="board-tags">{entryTags(entry).map((tag,index)=><span className="board-tag" key={index}>{tag}</span>)}</footer>
   </article>;
 }
