@@ -37,7 +37,7 @@ test('new entry attributes migrate, search, validate, and merge independently',(
   const base={...blankEntry(),name:'Dinner',where:'Library',tags:['book club'],group:'Evening',color:'purple'};
   const query=entrySearchText(base);
   for(const term of ['dinner','library','book club','evening','purple'])assert.ok(query.includes(term));
-  assert.equal(effectiveCardColor(newBoardItem('sticky'),[],base.color),'purple');
+  assert.equal(effectiveCardColor(newBoardItem('sticky'),base.color),'purple');
   const old={...base};for(const key of ['where','tags','group','color'])delete old[key];
   assert.deepEqual(decodeEntries([old])[0].tags,[]);
   assert.equal(decodeEntries([old])[0].where,'');

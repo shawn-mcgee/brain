@@ -19,22 +19,25 @@ test('cards promote and demote automatically as image attachments change',()=>{
   const note=newBoardItem('sticky'),photo={id:'image',name:'Photo',type:'image/jpeg',size:0,createdAt:new Date().toISOString()};
   assert.equal(effectiveCardKind(note,[]),'sticky');
   assert.equal(effectiveCardKind(note,[photo]),'polaroid');
-  assert.equal(effectiveCardColor(note,[photo]),'white');
+  assert.equal(effectiveCardColor(note),'');
   assert.equal(effectiveCardKind(note,[{...photo,type:'application/pdf'}]),'sticky');
-  assert.equal(effectiveCardColor({...note,customColor:true,color:'yellow'},[photo]),'yellow');
-  assert.equal(effectiveCardColor(newBoardItem('polaroid'),[]),'yellow');
+  assert.equal(effectiveCardColor({...note,customColor:true,color:'yellow'}),'yellow');
+  assert.equal(effectiveCardColor(newBoardItem('polaroid')),'');
   assert.equal(effectiveCardKind(newBoardItem('calendar'),[photo]),'calendar');
   assert.equal(newBoardItem('calendar').color,'blue');
 });
 
-test('checklist cards default to green while explicit colors and calendar colors take precedence',()=>{
-  const card=newBoardItem('sticky');
-  assert.equal(effectiveCardColor(card,[],'',true),'green');
-  assert.equal(effectiveCardColor(newBoardItem('polaroid'),[],'',true),'green');
-  assert.equal(effectiveCardColor(card,[],'pink',true),'pink');
-  assert.equal(effectiveCardColor({...card,customColor:true,color:'purple'},[],'',true),'purple');
-  assert.equal(effectiveCardColor(newBoardItem('calendar'),[],'',true),'blue');
-  assert.equal(effectiveCardColor(card,[],'',false),'yellow');
+test('cards use the app theme until a thought or card color is explicitly selected',()=>{
+  for(const kind of ['sticky','polaroid','calendar']){
+    const card=newBoardItem(kind);
+    assert.equal(card.customColor,false);
+    assert.equal(effectiveCardColor(card),'');
+    assert.equal(effectiveCardColor(card,'pink'),'pink');
+    assert.equal(effectiveCardColor({...card,customColor:true,color:'purple'}),'purple');
+    assert.equal(effectiveCardColor({...card,customColor:true,color:'purple'},'blue'),'blue');
+    assert.equal(effectiveCardColor({...card,customColor:true,color:'purple'},''),'');
+    assert.equal(effectiveCardColor({...card,customColor:false,color:'purple'}),'');
+  }
 });
 
 test('legacy card options merge when another browser adds pin, color, or archive fields',()=>{

@@ -4,7 +4,7 @@ export type Attachment = { id: string; name: string; type: string; size: number;
 export const MAX_FILE_SIZE = 2 * 1024 * 1024;
 export const boardColors = ['yellow','pink','blue','green','white','purple','orange','gray'] as const;
 export function newBoardItem(kind: BoardKind, x=0, y=0, z=1): BoardItem {
-  return {id:crypto.randomUUID(),kind,x,y,width:kind==='calendar'?840:320,height:kind==='calendar'?850:360,z,color:kind==='calendar'?'blue':kind==='polaroid'?'white':'yellow',pinned:false,archived:false,...(kind==='calendar'?{title:'Calendar',calendarPeriod:'month' as const,calendarDynamic:true}:{})};
+  return {id:crypto.randomUUID(),kind,x,y,width:kind==='calendar'?840:320,height:kind==='calendar'?850:360,z,color:kind==='calendar'?'blue':kind==='polaroid'?'white':'yellow',customColor:false,pinned:false,archived:false,...(kind==='calendar'?{title:'Calendar',calendarPeriod:'month' as const,calendarDynamic:true}:{})};
 }
 export function validateBoardFields(boardItems: unknown, attachments: unknown): string {
   if (!Array.isArray(boardItems) || boardItems.length>100 || !Array.isArray(attachments) || attachments.length>20) return 'Invalid board cards or attachments.';
@@ -70,12 +70,6 @@ export function resizeBoardItem(item:BoardItem,dx:number,dy:number):Pick<BoardIt
   return {width,height:width*ratio};
 }
 export function effectiveCardKind(item:BoardItem,attachments:Attachment[]):BoardKind { return item.kind==='calendar'?'calendar':attachments.some(isPreviewImage)?'polaroid':'sticky'; }
-export function effectiveCardColor(item:BoardItem,attachments:Attachment[],entryColor='',hasChecklist=false):string {
-  if(entryColor)return entryColor;
-  const kind=effectiveCardKind(item,attachments);
-  if(item.customColor)return item.color;
-  if(hasChecklist&&kind!=='calendar')return 'green';
-  if(kind!=='sticky'&&item.color==='yellow')return kind==='calendar'?'blue':'white';
-  if(kind==='sticky'&&item.kind==='polaroid'&&item.color==='white')return 'yellow';
-  return item.color;
+export function effectiveCardColor(item:BoardItem,entryColor?:string):string {
+  return entryColor===undefined?(item.customColor?item.color:''):entryColor;
 }

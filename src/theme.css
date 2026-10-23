@@ -187,10 +187,11 @@
   color-scheme:light;
 }
 
-/* Every calendar control derives its colors from the selected paper swatch. */
+/* Only explicitly colored calendars establish a paper palette. Default calendars
+   inherit the app palette, including native controls and selected days. */
 :root { --calendar-selected-bg:#88496f; --calendar-selected-ink:#fff; }
 :root[data-theme=dark] { --calendar-selected-bg:#cab0e3; --calendar-selected-ink:#251a2e; }
-:root[data-theme] .board-card.calendar {
+:root[data-theme] .board-card.calendar:not(.board-default) {
   --paper-ink:#25212c; --paper-muted:#4e4052;
   --theme-surface:color-mix(in srgb,var(--paper) 90%,white);
   --theme-raised:color-mix(in srgb,var(--paper) 75%,white);
@@ -473,7 +474,8 @@
 }
 
 /* The palette is app chrome, so its text must not inherit the card's dark ink. */
-:root[data-theme] .pinned-color-picker .board-color-options {
+:root[data-theme] .board-color-options {
+  row-gap:6px;
   --theme-text:#30232e;
   --theme-raised:#f8edf3;
   --theme-hover:#efdce7;
@@ -482,7 +484,7 @@
   color:var(--theme-text);
   border-color:var(--theme-border);
 }
-:root[data-theme=dark] .pinned-color-picker .board-color-options {
+:root[data-theme=dark] .board-color-options {
   --theme-text:#eee8f3;
   --theme-raised:#30283b;
   --theme-hover:#40334e;
@@ -642,3 +644,27 @@
 :root[data-theme] .reorderable-items .reorder-item .reorder-grip:hover:not([aria-disabled=true]) { color:var(--theme-text); }
 :root[data-theme] .reorderable-items .reorder-item .reorder-grip:active { cursor:grabbing; }
 :root[data-theme] .reorderable-items .reorder-item .reorder-grip[aria-disabled=true] { cursor:default; opacity:.35; }
+
+/* Uncolored board cards inherit app tokens before mapping them to paper tokens.
+   Explicit inherit avoids a paper/theme variable cycle. */
+:root[data-theme] .board-card.board-default {
+  --theme-surface:inherit; --theme-raised:inherit; --theme-hover:inherit;
+  --theme-text:inherit; --theme-muted:inherit; --theme-border:inherit; --theme-accent:inherit;
+  --paper:var(--theme-surface); --paper-deep:var(--theme-border);
+  --paper-ink:var(--theme-text); --paper-muted:var(--theme-muted);
+  --thought-detail-bg:var(--theme-raised); --thought-detail-ink:var(--theme-text);
+  --thought-check-accent:var(--theme-accent); --thought-check-bg:var(--theme-surface);
+  --thought-control-hover-bg:var(--theme-hover); --thought-control-hover-border:var(--theme-accent);
+  --calendar-selected-bg:inherit; --calendar-selected-ink:inherit;
+  color-scheme:inherit; background:var(--theme-surface); color:var(--theme-text); border-color:var(--theme-border);
+}
+:root[data-theme] .board-card.board-default :is(.board-card-header,.board-card-footer) { border-color:var(--theme-border); }
+:root[data-theme] .board-card.board-default :is(input,select,textarea) { color-scheme:inherit; }
+:root[data-theme] .board-card.board-default input[type=checkbox] { color-scheme:inherit; }
+:root[data-theme] .board-card.board-default .error { color:#a04235; background:#fff1ec; }
+:root[data-theme=dark] .board-card.board-default .error { color:#ffb7a9; background:#432c29; }
+:root[data-theme] .board-color-options .board-color-default {
+  grid-column:1 / -1; width:100%; min-width:0; max-width:none;
+  height:34px; min-height:34px; max-height:none; padding:4px 12px; margin-bottom:6px;
+  white-space:nowrap; color:var(--theme-text);
+}
