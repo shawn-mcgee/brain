@@ -51,7 +51,7 @@ This attribute indicates that a thought is a tracked expense thought (an actual 
 
 #### Inbox
 
-The Inbox embeds the thought form. Sections appear in the order you add them. Attribute buttons follow this order: Note, Task, Waiting on (available with Task), List, Who, When, Repeats (available with When), Where, Money, Files, Color, Group, Tags. Removing When also removes repetition and its history. Sections collapse without clearing values; **Remove** clears their values. Saving creates the thought and resets the form; Clear resets without saving. Drafts remain when switching tabs. Other views open the same form in an **Add thought** popup.
+The Inbox embeds the thought form. Sections appear in the order you add them. Attribute buttons follow this order: Note, Task, Waiting on (available with Task), List, Who, When, Repeats (available with When), Where, Money, Files, Links, Color, Group, Tags. Removing When also removes repetition and its history. Sections collapse without clearing values; **Remove** clears their values. Saving creates the thought and resets the form; Clear resets without saving. Drafts remain when switching tabs. Other views open the same form in an **Add thought** popup.
 
 #### Todo
 
@@ -231,4 +231,16 @@ Todo and Calendar (including board calendars) exclude actual tracked income and 
 
 Mobile budget rows give Track and Delete their own action row below the amount and date.
 
-**Deploy the current `apps-script/Code.gs` as a new web-app version before syncing this update.** Sync API version 10 adds `pin` and `pinOrder`. Existing 29-column Sheets migrate automatically, preserving budget order and board locks. The migration also supports older recognized schemas; do not manually rename or reorder Sheet headers. The cache namespace changes so pre-migration snapshots cannot be returned under the new protocol.
+**Deploy the current `apps-script/Code.gs` as a new web-app version before syncing this update.** Sync API version 11 adds `links`. Existing 31-column Sheets migrate automatically, preserving thought data, Pin settings, budget order, and board locks. The migration also supports older recognized schemas; do not manually rename or reorder Sheet headers. The cache namespace changes so pre-migration snapshots cannot be returned under the new protocol.
+
+
+### Links
+
+Add **Links**, immediately after **Files** in the attribute picker, to attach up to 20 HTTP or HTTPS URLs (2,000 characters each). Each link has its own editable URL field. Use **Add link** or Enter in the new-link field to add another. New links appear first, with the add field above the list so embedded videos do not push it down. Drag the dotted grip beside a checklist item or link to reorder it; neighboring items animate into place. Reordering also works in thought lists, Pinned, and board cards. Focus a grip and use Up/Down or Home/End for keyboard reordering; Escape cancels an active drag. Animations respect reduced-motion preferences. Links appear in thought lists, Pinned cards, and board cards. YouTube watch, short share, Shorts, live, and embed video URLs automatically offer a collapsible player, collapsed by default. Choose **Show video** to expand it or **Hide video** to collapse it and stop playback. The original video link stays available. Shared timestamps are retained; players do not autoplay. Videos that disallow embedding can still be opened through the original link. The player follows [YouTube's documented iframe format](https://developers.google.com/youtube/player_parameters).
+
+Deploy the updated `apps-script/Code.gs` as a new web-app version before syncing Links. Sync API 11 rejects older clients to prevent them from discarding links; existing Sheets gain a `links` column automatically.
+
+
+### Past Due tasks
+
+Todo shows unfinished dated tasks in a separate **Past Due** section above the selected time window and Any time tasks. Past Due includes older unchecked occurrences of repeating tasks, even after their series ends. It uses today's date independently of the selected time window, respects search and person filters, and excludes completed tasks and ordinary calendar events. A date range becomes overdue after its end date. Completing an occurrence removes it from Past Due without completing other occurrences.

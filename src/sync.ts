@@ -3,6 +3,7 @@ import type { Entry } from "./domain.ts";
 import { mergeItems } from './board-model.ts';
 import type { BoardItem } from './board-model.ts';
 import {reconcileList} from './checklist-model.ts';
+import {mergedOrder} from './reorder-model.ts';
 export class SyncConflict extends Error {}
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
@@ -47,17 +48,21 @@ export function mergeEntries(
           const original=b?.list?.find(item=>item.id===line.id)?.completedDates||[],left=l.list?.find(item=>item.id===line.id),right=r.list?.find(item=>item.id===line.id);
           if(!left||!right)return line;
           return {...line,completedDates:[...new Set([...left.completedDates,...right.completedDates])].filter(day=>!original.includes(day)||left.completedDates.includes(day)&&right.completedDates.includes(day))};
-        });continue;
+        });
+        const order=mergedOrder((b?.list||[]).map(item=>item.id),l.list.map(item=>item.id),r.list.map(item=>item.id),merged.list.map(item=>item.id));
+        const byId=new Map(merged.list.map(item=>[item.id,item]));
+        merged.list=order.map(id=>byId.get(id)!);continue;
       }
-      if (["who", "requires", "completedDates", "tags"].includes(key)) {
+      if (["who", "requires", "completedDates", "tags", "links"].includes(key)) {
         const original = (b?.[key] || []) as string[],
           left = l[key] as string[],
           right = r[key] as string[];
-        Object.assign(merged, {
-          [key]: [...new Set([...left, ...right])].filter(
+        const values=[...new Set([...left, ...right])].filter(
             (v) =>
               !original.includes(v) || (left.includes(v) && right.includes(v)),
-          ),
+          );
+        Object.assign(merged, {
+          [key]: key==='links'?mergedOrder(original,left,right,values):values,
         });
       } else if (b && same(l[key], b[key]))
         Object.assign(merged, { [key]: r[key] });

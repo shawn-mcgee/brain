@@ -1,3 +1,5 @@
+import ThoughtLinks,{LinksEditor} from './ThoughtLinks';
+import {viewTitle} from './view-title';
 import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
@@ -13,7 +15,7 @@ import {
   periodRange,
   periodKind,
   shiftPeriod,
-  todoOccurrences,
+  todoSections,
   occurrenceHighlight,
   validateEntry,
   decodeEntries,
@@ -160,7 +162,7 @@ function RepeatingCopyDialog({draft,source,today,close,openDraft}:{draft:Entry;s
   const [mode,setMode]=useState<'separate'|'future'>('separate');
   const [from,setFrom]=useState(()=>{const preferred=minimum>today?minimum:today;return preferred>maximum?maximum:preferred;});
   const [error,setError]=useState('');
-  return <Modal title="Copy repeating thought" className="completion-dialog copy-dialog" close={close}>
+  return <Modal title="Copy repeating thought" className={`completion-dialog copy-dialog${draft.color?` item-colored board-${draft.color}`:''}`} close={close}>
     <form onSubmit={event=>{
       event.preventDefault();
       try {openDraft(mode==='future'?futureCopy(draft,source,from):freshCopy(draft),mode==='future');}
@@ -292,6 +294,7 @@ function Editor({
     } else {const issue=save(cleaned);if(issue)setError(issue);}
   }
   const fields = {
+    links: <LinksEditor value={draft.links} onChange={links=>update({links})}/>,
     list: <Checklist entry={draft} entries={entries} editable onChange={setDraft}/>,
     attachments: <Attachments itemName={draft.name} note={draft.note} value={draft.attachments} entryId={draft.id} connection={connection} token={token} onChange={attachments=>update({attachments})} onBusyChange={setFilesBusy}/>,
     note: (
@@ -1009,7 +1012,8 @@ function App() {
       (!search || entrySearchText(e).includes(search.toLowerCase())) &&
       (!person || e.who.includes(person)),
   );
-  const todoItems = todoOccurrences(filtered, todoAnchor, todoPeriod, showDone);
+  const todo = view==='Todo'?todoSections(filtered,today,todoPeriod,showDone,todoAnchor):{pastDue:[],scheduled:[],anyTime:[]};
+  const todoTitle=viewTitle(todoPeriod,todoAnchor,today,true);
   const calendarRange = periodRange(
     calendarPeriod === "All" ? "This Month" : calendarPeriod,
     calendarAnchor,
@@ -1139,6 +1143,7 @@ function App() {
             </span>
           </span>
         </button>
+        <ThoughtLinks links={e.links} disabled={busy} onChange={links=>change(store.entries.map(item=>item.id===e.id?{...item,links}:item))}/>
         {e.list.length>0&&<Checklist entry={e} entries={store.entries} date={date} disabled={busy} onChange={updated=>change(store.entries.map(item=>item.id===updated.id?updated:item))}/>}
         </div>
         {(e.budgetType || e.transactionType) && (
@@ -1455,9 +1460,10 @@ function App() {
                       Show completed
                     </label>
                   </div>
-                  <section className="entry-list">
-                    {todoItems.some(o=>o.entry.beginsOn||o.entry.endsOn)
-                      ? todoItems.filter(o=>o.entry.beginsOn||o.entry.endsOn).map((o) =>
+                  {todo.pastDue.length>0&&<section aria-label="Past Due"><h3>Past Due</h3><div className="entry-list">{todo.pastDue.map(o=>row(o.entry,o.date,o.end||o.start,'Past due'))}</div></section>}
+                  {(todo.scheduled.length>0||!todo.anyTime.length&&!todo.pastDue.length)&&<section aria-label={todoTitle}><h3>{todoTitle}</h3><div className="entry-list">
+                    {todo.scheduled.length
+                      ? todo.scheduled.map((o) =>
                           row(
                             o.entry,
                             o.date,
@@ -1465,12 +1471,12 @@ function App() {
                             occurrenceHighlight(o, today),
                           ),
                         )
-                      : todoItems.length ? null : empty(
+                      : todo.anyTime.length||todo.pastDue.length ? null : empty(
                           "No matching thoughts",
                           "No tasks or upcoming dates match this view.",
                         )}
-                  </section>
-                  {todoItems.some(o=>!o.entry.beginsOn&&!o.entry.endsOn)&&<section aria-label="Tasks for any time"><h3>Any time</h3><div className="entry-list">{todoItems.filter(o=>!o.entry.beginsOn&&!o.entry.endsOn).map(o=>row(o.entry))}</div></section>}
+                  </div></section>}
+                  {todo.anyTime.length>0&&<section aria-label="Tasks for any time"><h3>Any time</h3><div className="entry-list">{todo.anyTime.map(o=>row(o.entry))}</div></section>}
                 </>
               )}
               {view === "Calendar" && (
@@ -1770,7 +1776,7 @@ function App() {
         setFutureReplacement(replace?{draftId:entry.id,source:copyChoice.source}:null);
         setCopyDraftId(entry.id);setEditor(entry);setCopyChoice(null);
       }}/>}
-      {deleteTarget && <Modal title="Delete thought?" className="completion-dialog deletion-dialog" close={() => setDeleteTarget(null)}>
+      {deleteTarget && <Modal title="Delete thought?" className={`completion-dialog deletion-dialog${deleteTarget.color?` item-colored board-${deleteTarget.color}`:''}`} close={() => setDeleteTarget(null)}>
         <div className="completion-body">
           <div className="completion-task">
             <span className="completion-check deletion-check" aria-hidden="true">🗑️</span>
@@ -1786,7 +1792,7 @@ function App() {
           <button type="button" autoFocus className="primary" onClick={() => setDeleteTarget(null)}>Cancel</button>
         </div>
       </Modal>}
-      {completedTarget && <Modal title="Task completed" className="completion-dialog" close={() => setCompletedTarget(null)}>
+      {completedTarget && <Modal title="Task completed" className={`completion-dialog${completedTarget.color?` item-colored board-${completedTarget.color}`:''}`} close={() => setCompletedTarget(null)}>
         <div className="completion-body">
           <div className="completion-task">
             <span className="completion-check" aria-hidden="true">{taskCompletionGlyph(completedTarget)}</span>

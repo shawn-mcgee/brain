@@ -16,9 +16,11 @@ export const sectionNames = {
   requires: "Waiting on",
   money: "Money",
   attachments: 'Files',
+  links: 'Links',
 } as const;
 export type EntrySection = keyof typeof sectionNames;
 export const sectionEmoji: Record<EntrySection, string> = {
+  links: '\u{1F517}',
   pin: '\u{1F4CC}',
   note: '📝',
   task: "✅",
@@ -50,6 +52,7 @@ export function initialEntrySections(entry: Entry): EntrySection[] {
   if (entry.requires.length) sections.push("requires");
   if (entry.budgetType || entry.transactionType) sections.push("money");
   if (entry.attachments?.length || entry.boardItems?.some(item=>item.kind==='polaroid')) sections.push('attachments');
+  if(entry.links.length)sections.push('links');
   return sectionOrder.filter(section=>sections.includes(section));
 }
 export function availableEntrySections(
@@ -83,6 +86,7 @@ export function removeEntrySection(
     requires: { requires: [] },
     money: { budgetType: "", transactionType: "", amount: 0, budgetId: "" },
     attachments: {attachments:[]},
+    links: {links:[]},
   };
   let remaining = sections.filter((value) => value !== section);
   const updated = { ...entry, ...cleared[section] };
@@ -118,6 +122,7 @@ export const sectionDescriptions:Record<EntrySection,string>={
   requires:'Thoughts this thought is waiting on. Select as many as needed.',
   money:'A budget plan or an actual income or expense.',
   attachments:'Files attached to this thought, loaded when needed.',
+  links:'Web links attached to this thought. YouTube videos appear as embedded players.',
 };
 
-export const sectionOrder:EntrySection[]=['pin','note','task','requires','list','who','when','repeat','where','money','attachments','color','group','tags'];
+export const sectionOrder:EntrySection[]=['pin','note','task','requires','list','who','when','repeat','where','money','attachments','links','color','group','tags'];

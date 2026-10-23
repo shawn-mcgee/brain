@@ -1,3 +1,4 @@
+import {validateLinks} from './links-model.ts';
 import { validateBoardFields, boardColors } from './board-model.ts';
 import type { BoardItem, Attachment } from './board-model.ts';
 export const intervals = [
@@ -42,6 +43,7 @@ export type Entry = {
   updatedAt: string;
   boardItems: BoardItem[];
   attachments: Attachment[];
+  links: string[];
 };
 export type Occurrence = {
   entry: Entry;
@@ -84,6 +86,7 @@ export function blankEntry(): Entry {
     updatedAt: now,
     boardItems: [],
     attachments: [],
+    links: [],
   };
 }
 export const periods = [
@@ -182,8 +185,11 @@ export function todoOccurrences(
       const next = nextScheduled(e, today);
       return next ? [next] : [];
     })
-    .filter((o) => showDone || !o.entry.task || !isDone(o.entry, o.date))
-    .sort(
+    .filter((o) => showDone || !o.entry.task || !isDone(o.entry, o.date));
+  return orderTodoOccurrences(candidates);
+}
+function orderTodoOccurrences(items:Occurrence[]):Occurrence[] {
+  const candidates=[...items].sort(
       (a, b) =>
         (a.end || a.start || "9999").localeCompare(
           b.end || b.start || "9999",
@@ -208,6 +214,19 @@ export function todoOccurrences(
   }
   candidates.forEach(visit);
   return ordered;
+}
+export function isPastDue(o:Occurrence,today:string):boolean {
+  return o.entry.task&&!!(o.end||o.start)&&(o.end||o.start)<today&&!isDone(o.entry,o.date);
+}
+export function todoSections(entries:Entry[],today:string,period:Period|'All',showDone=false,anchor=today):{pastDue:Occurrence[];scheduled:Occurrence[];anyTime:Occurrence[]} {
+  const pastDue=orderTodoOccurrences(entries.filter(entry=>entry.task&&!entry.transactionType).flatMap(entry=>{
+    const start=entry.beginsOn||entry.endsOn;
+    return start&&start<today?occurrences(entry,start,addDays(today,-1)).filter(item=>isPastDue(item,today)):[];
+  }));
+  const selected=todoOccurrences(entries,anchor,period,showDone).filter(item=>
+    !isPastDue(item,today)&&(item.entry.task||(item.end||item.start)>=today),
+  );
+  return {pastDue,scheduled:selected.filter(item=>item.start||item.end),anyTime:selected.filter(item=>!item.start&&!item.end)};
 }
 export function hasTimeRange(entry:Entry):boolean {
   return !!entry.beginsOn&&!!entry.endsOn&&(entry.beginsOn!==entry.endsOn||entry.beginsAt!==entry.endsAt);
@@ -354,6 +373,8 @@ export function validateEntry(e: Entry, entries: Entry[]): string {
     if(!line||typeof line.id!=='string'||!line.id||line.id.length>100||listIds.has(line.id)||typeof line.text!=='string'||!line.text.trim()||line.text.length>1000||typeof line.completed!=='boolean'||!Array.isArray(line.completedDates)||line.completedDates.some(d=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||d<'1900-01-01'||d>'2200-12-31'||dateKey(parseDate(d))!==d))return 'Invalid list line.';
     listIds.add(line.id);
   }
+  const linksError=validateLinks(e.links);
+  if(linksError)return linksError;
   const boardError = validateBoardFields(e.boardItems || [], e.attachments || []);
   if (boardError) return boardError;
   if (!e.name.trim()) return "Give this thought a name.";
@@ -421,7 +442,7 @@ export function decodeEntries(value: unknown): Entry[] {
     const legacy=raw.name===undefined && typeof raw.note==='string';
     const lines=legacy?raw.note.trim().split(/\r?\n/):[];
     const dates=raw.beginsOn&&!raw.endsOn?{endsOn:raw.beginsOn,endsAt:raw.beginsAt}:raw.endsOn&&!raw.beginsOn?{beginsOn:raw.endsOn,beginsAt:raw.endsAt}:{};
-    return {...raw,pin:raw.pin??false,pinOrder:raw.pinOrder??-1,budgetOrder:raw.budgetOrder??-1,budgetGroupOrder:raw.budgetGroupOrder??-1,repeatUntil:raw.repeatUntil??'',...dates,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),list:raw.list??[],where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
+    return {...raw,pin:raw.pin??false,pinOrder:raw.pinOrder??-1,budgetOrder:raw.budgetOrder??-1,budgetGroupOrder:raw.budgetGroupOrder??-1,repeatUntil:raw.repeatUntil??'',...dates,...(legacy?{name:lines[0],note:lines.slice(1).join('\n')}:{}),links:raw.links??[],list:raw.list??[],where:raw.where??'',color:raw.color??'',tags:raw.tags??[],group:raw.group??'',boardItems:raw.boardItems ?? [],attachments:raw.attachments ?? []};
   });
   const strings = [
     "name",

@@ -1,3 +1,4 @@
+import ThoughtLinks from './ThoughtLinks';
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEventHandler, KeyboardEventHandler } from 'react';
 import type { Entry } from './domain';
@@ -75,6 +76,7 @@ function BoardCardContent({item,entry,entries,connection,token,onUpdate,onEntryC
         {images.length>1&&<div className="board-photo-navigation"><button type="button" aria-label="Previous photo" onClick={()=>setPhotoId(images[(index+images.length-1)%images.length].id)}>‹</button><span aria-live="polite">{index+1} / {images.length}</span><button type="button" aria-label="Next photo" onClick={()=>setPhotoId(images[(index+1)%images.length].id)}>›</button></div>}
         {!entry.task&&<InlineText value={body} label="Edit photo caption" placeholder="Add a caption…" className="board-photo-caption" multiline onCommit={note=>onEntryChange(entry,{note})}/>}
       </div>:entry?!entry.task&&<InlineText value={body} label="Edit note" placeholder="Add a note…" className="board-note-text" multiline onCommit={note=>onEntryChange(entry,{note})}/>:<div className="board-note-text">{body}</div>}
+      {entry&&<ThoughtLinks links={entry.links} onChange={links=>onEntryChange(entry,{links})}/>}
       {entry&&kind!=='calendar'&&<>
         <div className="board-quick-actions">
           {entry.task&&<div className="board-task-toggle"><input type="checkbox" aria-label={body||title} checked={isDone(entry,checklistDate(entry))} onChange={event=>{

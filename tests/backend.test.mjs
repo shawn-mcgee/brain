@@ -228,7 +228,7 @@ test("legacy Entries headers and rows migrate without losing entry data", () => 
   assert.equal(result.ok,true);
   assert.equal(result.apiVersion,SYNC_API_VERSION);
   assert.deepEqual(result.entries,[entry]);
-  assert.deepEqual(Array.from(api.cells[0].slice(20)),['name','where','color','tags','group','list','repeatUntil','budgetOrder','budgetGroupOrder','pin','pinOrder']);
+  assert.deepEqual(Array.from(api.cells[0].slice(20)),['name','where','color','tags','group','list','repeatUntil','budgetOrder','budgetGroupOrder','pin','pinOrder','links']);
 });
 
 test("attachments round-trip in chunks and ordinary sync returns metadata only", () => {
@@ -449,7 +449,7 @@ test('budget order round-trips and version 8 Sheets migrate without losing budge
   const migrated=legacy.call({action:'read',token:'one'});
   assert.equal(migrated.ok,true);
   assert.deepEqual(migrated.entries,[{...entry,budgetOrder:-1,budgetGroupOrder:-1}]);
-  assert.deepEqual(Array.from(legacy.cells[0].slice(27)),['budgetOrder','budgetGroupOrder','pin','pinOrder']);
+  assert.deepEqual(Array.from(legacy.cells[0].slice(27)),['budgetOrder','budgetGroupOrder','pin','pinOrder','links']);
   assert.equal(migrated.revision,1);
   legacy.clearCache();assert.equal(legacy.call({action:'read',token:'one'}).revision,1);
   const invalid=api.call({action:'write',token:'one',revision:written.revision,entries:[{...entry,budgetOrder:1.5}]});
@@ -463,7 +463,7 @@ test('version 9 Sheets migrate Pin columns once without losing budgets or board 
   api.cells[0]=api.cells[0].slice(0,29);api.cells[1]=api.cells[1].slice(0,29);api.clearCache();
   const migrated=api.call({action:'read',token:'two'});
   assert.equal(migrated.ok,true,migrated.error);assert.deepEqual(migrated.entries,[entry]);
-  assert.deepEqual(Array.from(api.cells[0].slice(29)),['pin','pinOrder']);
+  assert.deepEqual(Array.from(api.cells[0].slice(29)),['pin','pinOrder','links']);
   assert.equal(api.cells[1][29],'false');assert.equal(api.cells[1][30],'-1');
   api.clearCache();assert.equal(api.call({action:'read',token:'one'}).revision,migrated.revision);
   const pinned={...entry,pin:true,pinOrder:0};
@@ -472,4 +472,22 @@ test('version 9 Sheets migrate Pin columns once without losing budgets or board 
   assert.deepEqual(api.call({action:'read',token:'two'}).entries,[pinned]);
   for(const patch of [{pin:'yes'},{pinOrder:-2},{pinOrder:0.5}])assert.match(api.call({action:'write',token:'one',revision:saved.revision,entries:[{...pinned,...patch}]}).error,/pin settings/);
   assert.equal(api.call({action:'write',token:'one',apiVersion:9,revision:saved.revision,entries:[]}).code,'UPGRADE_REQUIRED');
+});
+
+
+test('Links migrate from 31-column Sheets once, round-trip, and reject old writers and unsafe URLs',()=>{
+  const api=backend(),entry={...blankEntry(),name:'Reference',pin:true,pinOrder:0};
+  assert.equal(api.call({action:'write',token:'one',revision:0,entries:[entry]}).ok,true);
+  api.cells[0]=api.cells[0].slice(0,31);api.cells[1]=api.cells[1].slice(0,31);api.clearCache();
+  const migrated=api.call({action:'read',token:'two'});
+  assert.equal(migrated.ok,true,migrated.error);assert.deepEqual(migrated.entries,[entry]);
+  assert.equal(api.cells[0][31],'links');assert.equal(api.cells[1][31],'[]');
+  api.clearCache();assert.equal(api.call({action:'read',token:'one'}).revision,migrated.revision);
+  const linked={...entry,links:['https://example.com/docs','https://youtu.be/M7lc1UVf-VE']};
+  const saved=api.call({action:'write',token:'one',revision:migrated.revision,entries:[linked]});
+  assert.equal(saved.ok,true,saved.error);api.clearCache();
+  assert.deepEqual(api.call({action:'read',token:'two'}).entries,[linked]);
+  for(const links of [['javascript:alert(1)'],['https://example.com/path with spaces'],[42],Array(21).fill('https://example.com'),['https://example.com/'+ 'a'.repeat(2000)],{}])assert.equal(api.call({action:'write',token:'one',revision:saved.revision,entries:[{...linked,links}]}).ok,false);
+  assert.equal(api.call({action:'write',token:'one',apiVersion:10,revision:saved.revision,entries:[]}).code,'UPGRADE_REQUIRED');
+  assert.deepEqual(api.call({action:'read',token:'two'}).entries,[linked]);
 });

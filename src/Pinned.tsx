@@ -1,3 +1,4 @@
+import ThoughtLinks from './ThoughtLinks';
 import {useEffect,useId,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import type {ReactNode} from 'react';
@@ -60,6 +61,7 @@ function PinnedCard({entry,entries,connection,token,onEdit,onEntryChange,onTrack
     {taskError&&<p className="error" role="alert">{taskError}</p>}
     {!entry.list.length&&!listOpen&&<button type="button" className="board-add-list" onClick={()=>setListOpen(true)}>＋ List</button>}
     {(entry.list.length>0||listOpen)&&<Checklist entry={entry} entries={entries} editable inline onChange={updated=>onEntryChange(entry,updated)}/>}
+    <ThoughtLinks links={entry.links} onChange={links=>onEntryChange(entry,{links})}/>
     <footer className="board-tags">{entryTags(entry).map((tag,index)=><span className="board-tag" key={index}>{tag}</span>)}</footer>
   </article>;
 }
@@ -70,7 +72,7 @@ function UnpinDialog({entry,onConfirm,onClose}:{entry:Entry;onConfirm:()=>void;o
     const element=dialog.current!;element.showModal();cancel.current?.focus();
     return()=>element.close();
   },[]);
-  return createPortal(<dialog ref={dialog} className="completion-dialog" aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event=>{event.preventDefault();onClose();}} onClick={event=>{if(event.target===event.currentTarget)onClose();}}>
+  return createPortal(<dialog ref={dialog} className={`completion-dialog${entry.color?` item-colored board-${entry.color}`:''}`} aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event=>{event.preventDefault();onClose();}} onClick={event=>{if(event.target===event.currentTarget)onClose();}}>
     <div className="modal-head"><h2 id={titleId}>Unpin thought?</h2><button type="button" className="icon-button" aria-label="Close dialog" onClick={onClose}>Close</button></div>
     <div className="completion-body"><div className="completion-task"><strong>{entry.name}</strong></div><p id={descriptionId} className="completion-description">Remove this thought from Pinned? It will remain in Thoughts and on the Board.</p></div>
     <div className="completion-actions"><button ref={cancel} type="button" className="secondary" onClick={onClose}>Cancel</button><button type="button" className="primary" onClick={onConfirm}>Unpin</button></div>

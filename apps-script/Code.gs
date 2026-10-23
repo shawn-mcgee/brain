@@ -1,5 +1,5 @@
 /* Brain backend. Configure Script Properties; see README.md. */
-const COLUMNS = ['id', 'note', 'who', 'task', 'completed', 'completedDates', 'requires', 'beginsOn', 'beginsAt', 'endsOn', 'endsAt', 'repeat', 'budgetType', 'transactionType', 'amount', 'budgetId', 'createdAt', 'updatedAt', 'boardItems', 'attachments', 'name', 'where', 'color', 'tags', 'group', 'list', 'repeatUntil', 'budgetOrder', 'budgetGroupOrder', 'pin', 'pinOrder'];
+const COLUMNS = ['id', 'note', 'who', 'task', 'completed', 'completedDates', 'requires', 'beginsOn', 'beginsAt', 'endsOn', 'endsAt', 'repeat', 'budgetType', 'transactionType', 'amount', 'budgetId', 'createdAt', 'updatedAt', 'boardItems', 'attachments', 'name', 'where', 'color', 'tags', 'group', 'list', 'repeatUntil', 'budgetOrder', 'budgetGroupOrder', 'pin', 'pinOrder', 'links'];
 
 function doPost(event) {
   let lock;
@@ -10,13 +10,13 @@ function doPost(event) {
     if (!['read', 'write', 'file.get', 'file.put'].includes(body.action)) throw new Error('Unknown action.');
     const spreadsheetId = required_(properties, 'SPREADSHEET_ID');
     if (body.action.startsWith('file.')) return attachmentRequest_(body, spreadsheetId);
-    if(body.action==='write'&&body.apiVersion!==10)return json_({ok:false,code:'UPGRADE_REQUIRED',error:'Reload the current app before syncing. This backend requires sync API version 10.'});
+    if(body.action==='write'&&body.apiVersion!==11)return json_({ok:false,code:'UPGRADE_REQUIRED',error:'Reload the current app before syncing. This backend requires sync API version 11.'});
     if (body.action === 'write') body.entries = (body.entries || []).map(entry => normalizeEntryName_({...entry, boardItems: entry.boardItems || [], attachments: entry.attachments || []}));
     // Readers can use a previously committed snapshot without waiting for a writer.
     // Authenticate first; the shared cache contains no per-user credentials.
     if (body.action === 'read') {
       const cached = cachedSnapshot_(spreadsheetId, Number(properties.getProperty('REVISION') || 0));
-      if (cached) return json_({ ok: true, apiVersion: 10, entries: cached.entries, boardViews:cached.boardViews||[], revision: cached.revision, user: user });
+      if (cached) return json_({ ok: true, apiVersion: 11, entries: cached.entries, boardViews:cached.boardViews||[], revision: cached.revision, user: user });
     } else { validateEntries_(body.entries); if(body.boardViews!==undefined) validateBoardViews_(body.boardViews); }
     lock = LockService.getScriptLock();
     if (!lock.tryLock(1000)) return json_({ ok: false, code: 'BUSY', error: 'Another sync is in progress. Try again.' });
@@ -29,7 +29,7 @@ function doPost(event) {
     }
     if (sheet.getMaxColumns() < COLUMNS.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), COLUMNS.length - sheet.getMaxColumns());
     const headers = sheet.getRange(1, 1, 1, COLUMNS.length).getValues()[0];
-    if([18,20,21,25,26,27,29].some(width=>JSON.stringify(headers.slice(0,width))===JSON.stringify(COLUMNS.slice(0,width))&&headers.slice(width).every(value=>!value)))sheet.getRange(1,1,1,COLUMNS.length).setValues([COLUMNS]);
+    if([18,20,21,25,26,27,29,31].some(width=>JSON.stringify(headers.slice(0,width))===JSON.stringify(COLUMNS.slice(0,width))&&headers.slice(width).every(value=>!value)))sheet.getRange(1,1,1,COLUMNS.length).setValues([COLUMNS]);
     else if(JSON.stringify(headers)!==JSON.stringify(COLUMNS))throw new Error('Entries sheet headers have changed. Restore the original headers before syncing.');
     let revision = Number(properties.getProperty('REVISION') || 0);
     const viewSheet=attachmentSheet_(book,'BoardViews',['id','thought']);
@@ -63,7 +63,7 @@ function doPost(event) {
     } else {
       const rows = previousLastRow > 1 ? sheet.getRange(2, 1, previousLastRow - 1, COLUMNS.length).getValues() : [];
       entries = rows.filter(row => row[0]).map(row => normalizeEntryName_(Object.fromEntries(COLUMNS.map((column, i) => [column, i>=20&&!row[i]?undefined:i >= 18 && i<20 && !row[i] ? [] : JSON.parse(row[i])]))));
-      if(rows.some(row=>row[0]&&[20,21,22,23,24,25,26,27,28,29,30].some(index=>!row[index]))) {
+      if(rows.some(row=>row[0]&&[20,21,22,23,24,25,26,27,28,29,30,31].some(index=>!row[index]))) {
         sheet.getRange(2,1,entries.length,COLUMNS.length).setNumberFormat('@').setValues(entries.map(entry=>COLUMNS.map(column=>JSON.stringify(entry[column]))));
         // Persist the migration under the same lock and invalidate older writers.
         if(previousLastRow>entries.length+1)sheet.getRange(entries.length+2,1,previousLastRow-entries.length-1,COLUMNS.length).clearContent();
@@ -73,7 +73,7 @@ function doPost(event) {
       }
     }
     cacheSnapshot_(spreadsheetId, { entries: entries, boardViews:boardViews, revision: revision });
-    return json_({ ok: true, apiVersion: 10, entries: entries, boardViews:boardViews, revision: revision, user: user });
+    return json_({ ok: true, apiVersion: 11, entries: entries, boardViews:boardViews, revision: revision, user: user });
   } catch (error) {
     return json_({ ok: false, error: error.message || 'Request failed.' });
   } finally {
@@ -83,7 +83,7 @@ function doPost(event) {
 
 function cachedSnapshot_(spreadsheetId, revision) {
   try {
-    const raw = CacheService.getScriptCache().get('brain:v10:' + spreadsheetId + ':' + revision);
+    const raw = CacheService.getScriptCache().get('brain:v11:' + spreadsheetId + ':' + revision);
     const snapshot = raw ? JSON.parse(raw) : null;
     return snapshot && snapshot.revision === revision && Array.isArray(snapshot.entries) ? snapshot : null;
   } catch (_) { return null; } // Cache eviction/unavailability is harmless.
@@ -92,7 +92,7 @@ function cacheSnapshot_(spreadsheetId, snapshot) {
   try {
     const value = JSON.stringify(snapshot);
     // Conservative limit stays below CacheService's 100 KB per value, even for emoji.
-    if (value.length < 22000) CacheService.getScriptCache().put('brain:v10:' + spreadsheetId + ':' + snapshot.revision, value, 120);
+    if (value.length < 22000) CacheService.getScriptCache().put('brain:v11:' + spreadsheetId + ':' + snapshot.revision, value, 120);
   } catch (_) { /* A committed write must not fail because caching is unavailable. */ }
 }
 
@@ -118,7 +118,7 @@ function required_(properties, key) {
 function validateEntries_(entries) {
   if (!Array.isArray(entries) || entries.length > 10000 || JSON.stringify(entries).length > 4000000) throw new Error('Too many entries or request too large.');
   const ids = new Set();
-  const arrayFields = ['who', 'requires', 'completedDates', 'tags'];
+  const arrayFields = ['who', 'requires', 'completedDates', 'tags', 'links'];
   const metadataFields = ['boardItems','attachments','list'];
   entries.forEach(entry => {
     if (!entry || typeof entry !== 'object') throw new Error('Invalid entry.');
@@ -139,6 +139,7 @@ function validateEntries_(entries) {
     if (entry.beginsAt && !entry.beginsOn || entry.endsAt && !entry.endsOn || entry.repeat && !entry.beginsOn && !entry.endsOn) throw new Error('A date is required.');
     if (entry.beginsOn && entry.endsOn && (entry.endsOn < entry.beginsOn || entry.endsOn === entry.beginsOn && entry.beginsAt && entry.endsAt && entry.endsAt < entry.beginsAt)) throw new Error('Invalid date range.');
     if(entry.color&&!['yellow','pink','blue','green','white','purple','orange','gray'].includes(entry.color)||entry.tags.length>200||entry.tags.some(tag=>tag.length>500))throw new Error('Invalid entry color or tags.');
+    if(entry.links.length>20||entry.links.some(link=>link.length>2000||!isHttpLink_(link)))throw new Error('Use up to 20 valid HTTP or HTTPS links (2,000 characters each).');
     validateList_(entry.list);
     validateMetadata_(entry);
     ids.add(entry.id);
@@ -244,6 +245,7 @@ function normalizeEntryName_(entry) {
   ['where','color','group'].forEach(key=>{if(entry[key]===undefined)entry[key]='';});
   if(entry.tags===undefined)entry.tags=[];
   if(entry.list===undefined)entry.list=[];
+  if(entry.links===undefined)entry.links=[];
   if(entry.repeatUntil===undefined)entry.repeatUntil='';
   if(entry.pin===undefined)entry.pin=false;
   if(entry.pinOrder===undefined)entry.pinOrder=-1;
@@ -256,6 +258,10 @@ function normalizeEntryName_(entry) {
     return {...entry,name:lines[0],note:lines.slice(1).join('\n')};
   }
   return entry;
+}
+
+function isHttpLink_(value) {
+  return typeof value==='string'&&/^https?:\/\/(?:\[[0-9a-f:]+\]|[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)(?::\d{1,5})?(?:[/?#][^\s\\]*)?$/i.test(value);
 }
 
 function validateList_(list) {

@@ -1,6 +1,6 @@
 import type {Entry} from './domain.ts';
 import type {EntrySection} from './entry-sections.ts';
-export function entrySearchText(entry:Entry) {return [entry.name,entry.note,...entry.list.map(line=>line.text),...entry.who,entry.where,entry.group,...entry.tags,entry.color,entry.beginsOn,entry.endsOn,entry.budgetType,entry.transactionType].join(' ').toLowerCase();}
+export function entrySearchText(entry:Entry) {return [entry.name,entry.note,...entry.links,...entry.list.map(line=>line.text),...entry.who,entry.where,entry.group,...entry.tags,entry.color,entry.beginsOn,entry.endsOn,entry.budgetType,entry.transactionType].join(' ').toLowerCase();}
 export function copyEntry(entry:Entry):Entry {const now=new Date().toISOString();return {...structuredClone(entry),id:crypto.randomUUID(),name:`Copy of ${entry.name}`.slice(0,10000),boardItems:[],createdAt:now,updatedAt:now};}
 export function defaultSections(view:string):EntrySection[] {return view==='Budget'?['money']:view==='Todo'?['note','task','when']:view==='Calendar'?['note','when','where']:[];}
 export const mediaPlaceholderReferences = {

@@ -22,6 +22,17 @@ test('undated tasks appear once in all Todo windows and never expand into calend
   assert.deepEqual(occurrences(entry,'2026-10-01','2026-10-31'),[]);
   assert.equal(todoOccurrences([{...entry,completed:true}],'2026-10-19','This Week').length,0);
 });
+
+test('compact Todo headings follow the navigated anchor rather than the unchanged period value',()=>{
+  const today='2026-10-23';
+  for(const [period,anchor,title] of [
+    ['Today',today,'Today'],['Today','2026-10-22','Yesterday'],['Today','2026-10-24','Tomorrow'],
+    ['This Week',today,'This Week'],['This Week','2026-10-16','Last Week'],['This Week','2026-10-30','Next Week'],
+    ['This Month',today,'This Month'],['This Month','2026-09-23','Last Month'],['This Month','2026-11-23','Next Month'],
+    ['All',today,'All'],
+  ])assert.equal(viewTitle(period,anchor,today,true),title);
+  assert.equal(viewTitle('This Week','2026-10-09',today,true),'Week of October 4 (2 Weeks Ago)');
+});
 test('new entry attributes migrate, search, validate, and merge independently',()=>{
   const base={...blankEntry(),name:'Dinner',where:'Library',tags:['book club'],group:'Evening',color:'purple'};
   const query=entrySearchText(base);

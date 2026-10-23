@@ -165,6 +165,28 @@
 :root[data-theme=dark] .board-color-swatch > span { border-color:#25212c50; }
 :root[data-theme=dark] .board-color-swatch b { color:#25212c; text-shadow:none; }
 
+/* Default paper ink has lower specificity than the dark-mode swatches. */
+:root[data-theme] :where(.item-colored,.board-card,.thought-editor-colored) {
+  --paper-ink:#30232e;
+  --paper-muted:#4e4052;
+}
+
+/* A colored thought is a local theme boundary, including nested colored thoughts.
+   Declare tokens here so descendants never fall back to the app's dark chrome. */
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) {
+  --theme-surface:color-mix(in srgb,var(--paper) 65%,white);
+  --theme-raised:color-mix(in srgb,var(--paper) 85%,white);
+  --theme-hover:color-mix(in srgb,var(--paper) 60%,white);
+  --theme-text:var(--paper-ink,#30232e);
+  --theme-muted:var(--paper-muted,#4e4052);
+  --theme-border:var(--paper-deep);
+  --theme-accent:color-mix(in srgb,var(--paper-deep) 65%,#25212c);
+  --thought-detail-bg:var(--theme-surface);
+  --thought-detail-ink:var(--theme-text);
+  color:var(--theme-text);
+  color-scheme:light;
+}
+
 /* Every calendar control derives its colors from the selected paper swatch. */
 :root { --calendar-selected-bg:#88496f; --calendar-selected-ink:#fff; }
 :root[data-theme=dark] { --calendar-selected-bg:#cab0e3; --calendar-selected-ink:#251a2e; }
@@ -379,7 +401,7 @@
   color:var(--theme-text);
   border-color:var(--theme-border);
 }
-:root[data-theme] .thought-editor-colored :is(.secondary,.icon-button,.remove-section,.item-color-automatic,.checklist-line button,.checklist-add button,.money-mode button,.money-direction) {
+:root[data-theme] .thought-editor-colored :is(.secondary,.icon-button,.remove-section,.item-color-automatic,.checklist-line button:not(.board-inline-text),.checklist-add button,.money-mode button,.money-direction) {
   background:var(--theme-raised);
   color:var(--theme-text);
   border-color:var(--theme-border);
@@ -559,3 +581,64 @@
   background:var(--thought-control-hover-bg,var(--theme-hover));
   border-color:var(--thought-control-hover-border,var(--theme-border));
 }
+
+/* Controls and feedback inside a thought use its local palette in both modes. */
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(input,select,textarea,.board-inline-input) {
+  background:var(--theme-surface);
+  color:var(--theme-text);
+  border-color:var(--theme-border);
+  accent-color:var(--theme-accent);
+}
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(.attribute-autocomplete input,.money-amount-input input) { background:transparent; }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(input,textarea)::placeholder { color:var(--theme-muted); opacity:1; }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(input,select,textarea):disabled { background:var(--theme-raised); }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :focus-visible { outline-color:var(--theme-accent); }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored)::selection,
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) ::selection { background:var(--theme-accent); color:white; }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(.secondary,.icon-button,.checklist-line button:not(.board-inline-text),.checklist-add button,.board-photo-navigation button,.attachment-image-actions button,.board-add-list) {
+  background:var(--theme-raised);
+  color:var(--theme-text);
+  border-color:var(--theme-border);
+}
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(.secondary,.icon-button,.checklist-line button,.checklist-add button,.board-photo-navigation button,.attachment-image-actions button,.board-add-list):hover:not(:disabled) { background:var(--theme-hover); }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) .board-inline-text { background:transparent; color:var(--theme-text); }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) .board-inline-text:hover:not(:disabled) { background:var(--theme-hover); }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(.checklist-line .is-complete,.board-inline-text.is-placeholder,.board-resize) { color:var(--theme-muted); }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) .primary { background:var(--theme-accent); border-color:var(--theme-accent); color:white; }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) .primary:hover:not(:disabled) { background:color-mix(in srgb,var(--theme-accent) 85%,black); }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(.error,.deletion-check) {
+  background:color-mix(in srgb,var(--theme-surface) 85%,#f4b7ae);
+  color:#8c2c19;
+}
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(.due.overdue,.amount.negative,.budget-progress-warning) { color:#8c2c19; }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) .amount.positive { color:var(--theme-accent); }
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) .money-direction {
+  background:var(--theme-surface);
+  color:var(--theme-text);
+}
+:root[data-theme] .thought-editor-colored .attachment-drop-zone.is-dragging { background:var(--theme-hover); border-color:var(--theme-accent); }
+
+/* Secondary copy must also inherit the local palette in light mode. */
+:root[data-theme] :is(.item-colored,.board-card,.thought-editor-colored) :is(.muted,.hint,.completion-description,.completion-tracking p,.copy-choice small,.copy-date p) { color:var(--theme-muted); }
+
+/* Dialogs rendered outside the card carry the thought color explicitly. */
+:root[data-theme] dialog.item-colored { background:var(--paper); border-color:var(--theme-border); }
+:root[data-theme] dialog.item-colored .modal-head { background:var(--paper); border-color:var(--theme-border); }
+:root[data-theme] dialog.item-colored :is(.completion-actions,.completion-tracking,.completion-check,.copy-choice.is-selected) {
+  background:var(--theme-raised);
+  color:var(--theme-text);
+  border-color:var(--theme-border);
+}
+:root[data-theme] dialog.item-colored .copy-choice { border-color:var(--theme-border); }
+:root[data-theme] dialog.item-colored .copy-choice.is-selected { border-color:var(--theme-accent); }
+
+/* Grips stay quiet and inherit the local thought palette in either theme. */
+:root[data-theme] .reorderable-items .reorder-item .reorder-grip {
+  display:grid; place-items:center; flex:0 0 32px; width:32px; min-width:32px;
+  min-height:44px; padding:0; border:0; border-radius:6px;
+  background:transparent; color:var(--theme-muted); box-shadow:none;
+  font-size:26px; line-height:1; cursor:grab; user-select:none; touch-action:none;
+}
+:root[data-theme] .reorderable-items .reorder-item .reorder-grip:hover:not([aria-disabled=true]) { color:var(--theme-text); }
+:root[data-theme] .reorderable-items .reorder-item .reorder-grip:active { cursor:grabbing; }
+:root[data-theme] .reorderable-items .reorder-item .reorder-grip[aria-disabled=true] { cursor:default; opacity:.35; }

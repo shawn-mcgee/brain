@@ -18,5 +18,6 @@ export function entryTags(entry:Entry):string[] {
   if(entry.budgetType||entry.transactionType)tags.push(`${entry.budgetType?'Budget':'Transaction'} · ${entry.budgetType||entry.transactionType} ${new Intl.NumberFormat(undefined,{style:'currency',currency:'USD'}).format(entry.amount)}`);
   if(entry.requires.length)tags.push(`Waiting on ${entry.requires.length}`);
   if(entry.attachments.length)tags.push(`📎 ${entry.attachments.length}`);
+  if(entry.links.length)tags.push(`\u{1F517} ${entry.links.length}`);
   return tags;
 }
