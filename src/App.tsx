@@ -1,4 +1,5 @@
 import ThoughtLinks,{LinksEditor} from './ThoughtLinks';
+import ThoughtAttributeTags from './ThoughtAttributeTags';
 import {viewTitle} from './view-title';
 import { useEffect, useId, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
@@ -1116,6 +1117,7 @@ function App() {
         >
           <strong>{e.name}</strong>
           <span className="entry-meta">
+            {view==='Thoughts'?<ThoughtAttributeTags entry={e}/>:<>
             {highlight && <span className="upcoming-pill">{highlight}</span>}
             {e.who.map((p) => (
               <span key={p} className="person-pill">
@@ -1135,6 +1137,7 @@ function App() {
               !e.who.length &&
               !e.budgetType &&
               !e.transactionType && <span>Note</span>}
+            </>}
             <span className="entry-hover-cues">
               <Curiosity />
               {e.task&&<span className="task-anticipation" aria-hidden="true">{done?"\u{1F440} \u{2049}\uFE0F":"\u{1F440} \u{203C}\uFE0F"}</span>}
@@ -1143,8 +1146,8 @@ function App() {
             </span>
           </span>
         </button>
-        <ThoughtLinks links={e.links} disabled={busy} onChange={links=>change(store.entries.map(item=>item.id===e.id?{...item,links}:item))}/>
-        {e.list.length>0&&<Checklist entry={e} entries={store.entries} date={date} disabled={busy} onChange={updated=>change(store.entries.map(item=>item.id===updated.id?updated:item))}/>}
+        {view!=='Thoughts'&&<ThoughtLinks links={e.links} disabled={busy} onChange={links=>change(store.entries.map(item=>item.id===e.id?{...item,links}:item))}/>}
+        {view!=='Thoughts'&&e.list.length>0&&<Checklist entry={e} entries={store.entries} date={date} disabled={busy} onChange={updated=>change(store.entries.map(item=>item.id===updated.id?updated:item))}/>}
         </div>
         {(e.budgetType || e.transactionType) && (
           <span

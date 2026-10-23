@@ -2058,6 +2058,8 @@ details[open] > summary .attribute-awake { display:inline-block; }
 /* Link content follows the thought palette, including uncolored dark surfaces. */
 .links-editor,.thought-links { display:grid; gap:12px; min-width:0; }
 .thought-links { margin-top:10px; text-align:left; }
+.thought-attribute-tags { display:flex; flex-wrap:wrap; gap:5px; min-width:0; }
+.thought-attribute-tag { display:inline-flex; align-items:center; gap:4px; padding:3px 7px; border:1px solid var(--theme-border); border-radius:6px; background:var(--thought-detail-bg,var(--theme-raised)); color:var(--theme-text); font-size:13px; line-height:1.4; white-space:nowrap; }
 .thought-link { display:grid; gap:8px; min-width:0; }
 .link-embed-toggle,.link-copy-button { display:grid; place-items:center; width:44px; min-width:44px; height:44px; padding:4px; font-size:18px; }
 .thought-link a { overflow-wrap:anywhere; color:var(--theme-accent,#88496f); text-underline-offset:3px; }
