@@ -74,6 +74,7 @@ export function LinksEditor({value,onChange}:{value:string[];onChange:(links:str
     <ReorderableItems items={items} itemKey={item=>item.id} label={(_item,index)=>`link ${index+1}`} onChange={update}>{({link,id},index,grip)=><LinkItem link={link} index={index} row={(toggle,copy)=><>
         {grip}{copy}{toggle}
         <input type="url" required maxLength={2000} aria-label={`Link ${index+1}`} value={link} onChange={event=>update(items.map(item=>item.id===id?{...item,link:event.target.value}:item))} onBlur={()=>{const trimmed=link.trim();if(trimmed!==link)update(items.map(item=>item.id===id?{...item,link:trimmed}:item));}}/>
+        <button type="button" className="secondary" aria-label={`Remove link ${index+1}`} title="Remove link" onClick={()=>{update(items.filter(item=>item.id!==id));setError('');}}><span aria-hidden="true">{'\u2716\uFE0F'}</span></button>
     </>}/>}</ReorderableItems>
 
   </div>;
